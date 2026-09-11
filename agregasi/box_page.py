@@ -2,9 +2,9 @@
 import csv
 import math
 from copy import deepcopy
-from PySide6.QtCore import Qt,QDate,QRectF
+from PySide6.QtCore import Qt,QDate,QRect,QRectF
 from PySide6.QtGui import QColor,QPainter,QPen,QPixmap
-from PySide6.QtWidgets import QDateEdit,QTableWidgetItem,QPushButton,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QSpinBox
+from PySide6.QtWidgets import QDateEdit,QScrollBar,QTableWidgetItem,QPushButton,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QSpinBox
 from .pages import PageBase,OperationPage
 from .upload_page import SendPage
 from .box_model import BoxRepository
@@ -12,7 +12,12 @@ from .dashboard import WHITE,MUTED,GREEN,RED,YELLOW,BLUE
 from .label_render import render_image
 from .ui_dialogs import AppDialog,FileDialog,MessageBox
 
-GRID=dict(x=27,y=234,w=96,h=36,gap_x=7,gap_y=3,cols=5,rows=10)
+GRID=dict(x=23,y=234,w=98,h=74,gap_x=5,gap_y=7,cols=5,rows=5)
+SCROLL_STYLE='''QScrollBar:vertical {background:#062b41;border:1px solid #2d5c78;border-radius:5px;margin:0;width:12px;}
+QScrollBar::handle:vertical {background:#1f7bb0;border-radius:4px;min-height:26px;margin:1px;}
+QScrollBar::handle:vertical:hover {background:#2b9ad8;}
+QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical {height:0;}
+QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical {background:transparent;}'''
 PREVIEW=QRectF(577,253,506,168)
 
 
@@ -20,7 +25,7 @@ class BoxPage(OperationPage):
     button=SendPage.button
     def __init__(self,store):
         PageBase.__init__(self,store,'box','Agregasi Box','PEMINDAHAN & VERIFIKASI UNIT PRODUK','BOX')
-        self.stage='BOX';self.cfg=dict(self.CONFIG['BOX']);self.filled=0;self.run=None;self.repo=None;self.grid_page=0;self.scanning=False
+        self.stage='BOX';self.cfg=dict(self.CONFIG['BOX']);self.filled=0;self.run=None;self.repo=None;self.scanning=False
         self.child_codes=[];self.recent_children=[];self.result_rows=[];self.message='Pilih template aktif, batch dan list data lalu kunci data.';self.buttons={};self.verification_dialog=None
         self._preview_key=None;self._preview_image=None;self._preview_error=''
         self.template_selector=self.combo(99,720,235,24,[]);self.template_selector.setObjectName('box_template')
@@ -41,7 +46,9 @@ class BoxPage(OperationPage):
         self.mfd=QDateEdit(QDate.currentDate(),self);self.mfd.setDisplayFormat('dd/MM/yyyy');self.mfd.setCalendarPopup(True);self.mfd.setGeometry(65,951,124,29);self.mfd.setStyleSheet('QDateEdit {color:#edf5ff;background:#04283f;border:1px solid #3f6780;padding:3px;}')
         self.scan_input=self.field(240,951,225,29,'','Scan serial unit / Enter');self.scan_input.setMaxLength(500);self.scan_input.setObjectName('box_scan_input');self.scan_input.returnPressed.connect(self.scan)
         for i,name in enumerate(('box_targets','box_scan_step','box_print_step','box_verify')):self.hotspot(name,15+i*274,84,258,94)
-        self.button('grid_prev',430,199,27,25,'‹','',flat=True);self.button('grid_next',458,199,27,25,'›','',flat=True)
+        self.grid_scroll=QScrollBar(Qt.Orientation.Vertical,self);self.grid_scroll.setGeometry(538,234,12,398)
+        self.grid_scroll.setStyleSheet(SCROLL_STYLE);self.grid_scroll.setSingleStep(1);self.grid_scroll.setPageStep(GRID['rows'])
+        self.grid_scroll.setRange(0,0);self.grid_scroll.valueChanged.connect(lambda *_:self.update());self.grid_scroll.hide()
         self.cell_buttons=[]
         for i in range(GRID['cols']*GRID['rows']):
             row,col=divmod(i,GRID['cols']);b=self.hotspot('box_cell_'+str(i),GRID['x']+col*(GRID['w']+GRID['gap_x']),GRID['y']+row*(GRID['h']+GRID['gap_y']),GRID['w'],GRID['h']);self.cell_buttons.append(b)
@@ -103,6 +110,32 @@ class BoxPage(OperationPage):
         identifier=self.template_selector.currentData()
         doc=self.run['document'] if self.run else (self.template_document(identifier) if identifier else None)
         if doc and not self.run:self.cfg.update(capacity=doc['aggregation_max'])
+        self.sync_grid_scroll()
+
+    def grid_rows(self):
+        """Rows needed for the locked template target; the grid scrolls to reach them."""
+        return max(1,math.ceil(max(1,self.cfg['capacity'])/GRID['cols']))
+
+    def sync_grid_scroll(self):
+        hidden=self.grid_rows()<=GRID['rows']
+        self.grid_scroll.setRange(0,max(0,self.grid_rows()-GRID['rows']))
+        self.grid_scroll.setVisible(not hidden)
+        if hidden:self.grid_scroll.setValue(0)
+
+    def ensure_cell_visible(self,index):
+        row=index//GRID['cols'];first=self.grid_scroll.value()
+        if row<first:self.grid_scroll.setValue(row)
+        elif row>=first+GRID['rows']:self.grid_scroll.setValue(row-GRID['rows']+1)
+
+    def wheelEvent(self,event):
+        if self.grid_scroll.isVisible():
+            area=QRect()
+            for button in self.cell_buttons:
+                if button.isVisible():area=area.united(button.geometry())
+            area=area.united(self.grid_scroll.geometry())
+            if area.contains(event.position().toPoint()):
+                self.grid_scroll.setValue(self.grid_scroll.value()+(-1 if event.angleDelta().y()>0 else 1));event.accept();return
+        super().wheelEvent(event)
 
     def refresh(self):
         if not self.repo:return
@@ -150,7 +183,7 @@ class BoxPage(OperationPage):
         identifier=self.template_selector.currentData()
         if not identifier:self.notify('Pilih template box aktif terlebih dahulu.');return
         try:
-            self.grid_page=0;self.update_run(self.repo.start(identifier,self.batch.currentText(),self.mfd.text(),self.target_list.currentData()))
+            self.grid_scroll.setValue(0);self.update_run(self.repo.start(identifier,self.batch.currentText(),self.mfd.text(),self.target_list.currentData()))
         except (ValueError,OverflowError) as exc:self.message=str(exc);self.update();return
         self.scanning=self.run['state']=='OPEN'
         self.message='Data terkunci pada template '+self.run['document']['name']+'. Scanner memverifikasi otomatis setiap unit yang benar.'
@@ -162,7 +195,7 @@ class BoxPage(OperationPage):
             try:self.runtime.reset_empty(self.run['id'])
             except ValueError as exc:self.notify(str(exc));return False
         self.stop_scanner()
-        self.run=None;self.filled=0;self.child_codes=[];self.grid_page=0;self.scanning=False;self.cfg=dict(self.CONFIG['BOX'])
+        self.run=None;self.filled=0;self.child_codes=[];self.scanning=False;self.cfg=dict(self.CONFIG['BOX']);self.grid_scroll.setValue(0)
         self.buttons['stage_start_scan'].setText('START SCAN');self._preview_key=None;self._preview_image=None
         for widget in self.inputs+(self.mfd,):widget.setEnabled(True)
         with self.store.db:self.store.put('box_current_run',None)
@@ -172,7 +205,7 @@ class BoxPage(OperationPage):
     def update_run(self,run):
         self.run=run;doc=run['document'];self.filled=run['quantity'];self.cfg.update(capacity=doc['aggregation_max'],code=run['parent_code'] or '—',child='UNIT')
         self.child_codes=[r[0] for r in self.store.db.execute('SELECT code FROM aggregation_children WHERE run_id=? ORDER BY rowid',(run['id'],))]
-        meta=self.repo.meta(run['id'])
+        self.sync_grid_scroll();meta=self.repo.meta(run['id'])
         self.refresh_choices()
         self.template_selector.blockSignals(True);self.template_selector.setCurrentIndex(self.template_selector.findData(run['template_id']));self.template_selector.blockSignals(False)
         self.product.setText((doc.get('child_product') or {}).get('name',doc['data'].get('product_name','')));self.product.setCursorPosition(0)
@@ -195,7 +228,7 @@ class BoxPage(OperationPage):
         if not self.run:self.notify('Kunci data template terlebih dahulu sebelum memindai.');return
         if not self.scanning:self.notify('Scan dijeda. Tekan START SCAN untuk melanjutkan.');return
         try:
-            self.update_run(self.repo.scan(self.run['id'],code));self.scan_input.clear();self.grid_page=(max(1,self.filled)-1)//(GRID['cols']*GRID['rows'])
+            self.update_run(self.repo.scan(self.run['id'],code));self.scan_input.clear();self.ensure_cell_visible(max(0,self.filled-1))
             self.message=f'VALID • {self.filled}/{self.cfg["capacity"]} unit'
             if self.run['state']=='COMPLETE':
                 if self.run['print_state']=='PENDING':
@@ -232,11 +265,8 @@ class BoxPage(OperationPage):
         elif name=='stage_upload':self.settings_runtime.upload(level='BOX')
         elif name=='box_targets':self.show_targets()
         elif name in ('stage_verify','box_verify'):self.verify_dialog(self.pending_box() or self.run)
-        elif name in ('grid_prev','grid_next'):
-            per_page=GRID['cols']*GRID['rows']
-            self.grid_page=max(0,min(math.ceil(self.cfg['capacity']/per_page)-1,self.grid_page+(-1 if name=='grid_prev' else 1)));self.update()
         elif name.startswith('box_cell_'):
-            n=self.grid_page*GRID['cols']*GRID['rows']+int(name.rsplit('_',1)[1])
+            index=int(name.rsplit('_',1)[1]);n=(self.grid_scroll.value()+index//GRID['cols'])*GRID['cols']+index%GRID['cols']
             if n<len(self.child_codes):MessageBox.information(self,'Detail unit',f'Urutan: {n+1}\nSerial: {self.child_codes[n]}\nBox: {self.cfg["code"]}\nBatch: {self.run["batch"]}\nStatus: VALID')
 
     def print_run(self,automatic=False):
@@ -375,22 +405,23 @@ class BoxPage(OperationPage):
             self.text(x+12,96,24,24,str(i+1),14,'#123d5c',True,Qt.AlignmentFlag.AlignCenter);self.text(x+45,97,203,23,title,12,WHITE,True)
             self.text(x+46,126,154,42,desc,11,MUTED,wrap=True);self.icon(ico,x+216,123,31)
             if i<3:self.text(x+259,117,15,24,'›',24,'#176282',True,Qt.AlignmentFlag.AlignCenter)
-        per_page=GRID['cols']*GRID['rows']
+        first=self.grid_scroll.value();rows=self.grid_rows()
         self.panel(15,193,540,440);self.text(28,198,290,26,'AGREGASI UNIT KE BOX',14,WHITE,True)
-        self.text(330,199,95,25,str(self.cfg['capacity'])+' UNIT',10,MUTED,align=Qt.AlignmentFlag.AlignRight)
-        self.text(490,199,53,25,f'{self.grid_page+1}/{max(1,math.ceil(self.cfg["capacity"]/per_page))}',9,MUTED,align=Qt.AlignmentFlag.AlignRight);self.line(26,228,516)
-        for i in range(per_page):
-            n=self.grid_page*per_page+i;row,col=divmod(i,GRID['cols']);x=GRID['x']+col*(GRID['w']+GRID['gap_x']);y=GRID['y']+row*(GRID['h']+GRID['gap_y'])
+        self.text(330,199,213,25,str(self.cfg['capacity'])+' UNIT'+(f'  •  BARIS {first+1}-{min(rows,first+GRID["rows"])}/{rows}' if rows>GRID['rows'] else ''),10,MUTED,align=Qt.AlignmentFlag.AlignRight)
+        self.line(26,228,516)
+        for i in range(GRID['cols']*GRID['rows']):
+            row,col=divmod(i,GRID['cols']);n=(first+row)*GRID['cols']+col
+            x=GRID['x']+col*(GRID['w']+GRID['gap_x']);y=GRID['y']+row*(GRID['h']+GRID['gap_y'])
             filled=n<len(self.child_codes);exists=n<self.cfg['capacity'];scanning=exists and n==self.filled and self.scanning
             self.cell_buttons[i].setVisible(exists);self.cell_buttons[i].setToolTip(self.child_codes[n] if filled else f'Unit {n+1}')
             if not exists:continue
             self.rect(x,y,GRID['w'],GRID['h'],'#09834a' if filled else '#095687' if scanning else '#466c85','#035330' if filled else '#023d67' if scanning else '#274c65','#57d061' if filled else '#29b7f5' if scanning else '#7497b0',4)
-            self.text(x+6,y+2,26,15,str(n+1).zfill(2),9,WHITE,True)
+            self.text(x+7,y+4,44,18,str(n+1).zfill(2),11,WHITE,True)
             if filled:
-                self.dot(x+GRID['w']-17,y+3,GREEN,size=12);self.text(x+3,y+17,GRID['w']-6,16,self.child_codes[n],8,WHITE,True,Qt.AlignmentFlag.AlignCenter)
+                self.dot(x+75,y+6,GREEN,size=15);self.icon('barcode',x+30,y+25,35);self.text(x+3,y+57,92,15,self.child_codes[n],8,WHITE,True,Qt.AlignmentFlag.AlignCenter)
             elif scanning:
-                self.icon('sync',x+GRID['w']/2-8,y+3,16);self.text(x+2,y+19,GRID['w']-4,15,'SCANNING…',8,WHITE,True,Qt.AlignmentFlag.AlignCenter)
-            else:self.text(x,y+9,GRID['w'],18,'—',14,MUTED,align=Qt.AlignmentFlag.AlignCenter)
+                self.icon('sync',x+38,y+25,23);self.text(x+1,y+54,96,18,'SCANNING…',9,WHITE,True,Qt.AlignmentFlag.AlignCenter)
+            else:self.text(x,y+27,98,26,'—',17,MUTED,align=Qt.AlignmentFlag.AlignCenter)
         self.paint_print_template();self.paint_master_data()
         capacity=self.cfg['capacity'];ratio=min(1,self.filled/capacity)
         self.panel(15,637,1080,42)

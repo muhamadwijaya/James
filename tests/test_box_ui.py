@@ -7,6 +7,7 @@ from unittest.mock import patch
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 from agregasi.app import MainWindow
+from agregasi.box_page import GRID
 from agregasi.store import Store
 
 
@@ -24,7 +25,7 @@ class BoxUiTests(unittest.TestCase):
         cfg=self.window.settings_runtime.repo.load();cfg['scanners']['BOX'].update(mode='KAMERA IP',camera_ip='127.0.0.1',camera_port=port)
         self.window.settings_runtime.repo.save(cfg);self.page.refresh()
     def test_empty_screen_pause_reset_and_resume_controls(self):
-        p=self.page;self.assertEqual(p.filled,0);self.assertEqual(len(p.cell_buttons),50);self.start()
+        p=self.page;self.assertEqual(p.filled,0);self.assertEqual(len(p.cell_buttons),25);self.start()
         p.scan_input.setText('UNIT-1');p.scan();self.assertEqual(p.filled,1)
         p.local_action('stage_start_scan');p.scan_input.setText('UNIT-2');p.scan();self.assertEqual(p.filled,1)
         p.scan_input.clear();p.local_action('stage_start_scan');p.scan_input.setText('UNIT-2');p.scan();self.assertEqual(p.filled,2)
@@ -46,6 +47,22 @@ class BoxUiTests(unittest.TestCase):
         for control in p.inputs:self.assertTrue(control.isEnabled())
         p.template_selector.setCurrentIndex(1);p.local_action('stage_lock');p.scan_input.setText('LOCK-1');p.scan()
         p.local_action('stage_lock');self.assertIsNotNone(p.run);self.assertIn('berisi child',p.message)
+    def test_grid_keeps_full_cells_and_scrolls_to_the_template_target(self):
+        p=self.page;self.start()
+        # Cells keep the reference design size; the target maximum decides how many rows exist.
+        self.assertEqual((GRID['w'],GRID['h']),(98,74))
+        widths={b.width() for b in p.cell_buttons};heights={b.height() for b in p.cell_buttons}
+        self.assertLessEqual(max(widths)-min(widths),2);self.assertLessEqual(max(heights)-min(heights),2)
+        self.assertEqual(p.cfg['capacity'],50);self.assertEqual(p.grid_rows(),10)
+        self.assertTrue(p.grid_scroll.isVisibleTo(p));self.assertEqual(p.grid_scroll.maximum(),5)
+        p.grid_scroll.setValue(5);p.grab()
+        self.assertEqual(p.cell_buttons[0].toolTip(),'Unit 26')
+        p.local_action('box_cell_0');p.grid_scroll.setValue(0)
+        repo=self.window.pages['template'].repo;identifier=repo.list('BOX')[0]['id'];doc=repo.get(identifier)['document']
+        p.local_action('stage_lock');doc.update(aggregation_min=1,aggregation_max=12);repo.save(doc,identifier)
+        p.refresh();p.template_selector.setCurrentIndex(1);p.local_action('stage_lock')
+        self.assertEqual(p.grid_rows(),3);self.assertFalse(p.grid_scroll.isVisibleTo(p));self.assertEqual(p.grid_scroll.maximum(),0)
+
     def test_locked_template_preview_and_master_box_data(self):
         p=self.page;self.start();p.scan_input.setText('UNIT-1');p.scan()
         image=p.preview_image();self.assertIsNotNone(image);self.assertFalse(image.isNull())

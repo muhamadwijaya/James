@@ -1,9 +1,13 @@
 # Agregasi tahap 1, template print terkunci, dan printer TIJ — v3.12.0
 
-**Halaman Tahap 1 / BOX kini terbagi dua.** Separuh kiri tetap grid unit 50 sel
-(lima kolom, sepuluh baris). Separuh kanan menampilkan **template print yang
-dikunci** — label persis seperti yang akan dicetak, lengkap dengan kode box,
-ukuran canvas, DPI, jenis printer, dan penanda cetak otomatis saat maksimum.
+**Halaman Tahap 1 / BOX kini terbagi dua.** Separuh kiri tetap grid unit dengan
+**ukuran sel yang sama seperti sebelumnya**; lima sel per baris dan lima baris
+terlihat sekaligus. Jumlah sel mengikuti **target maksimum agregasi** pada
+template yang dipilih, dan sisanya dicapai dengan **scroll ke bawah** (roda mouse
+di atas grid atau bilah gulir di sisi kanan panel). Baris yang sedang dipindai
+selalu ikut terlihat. Separuh kanan menampilkan **template print yang dikunci** —
+label persis seperti yang akan dicetak, lengkap dengan kode box, ukuran canvas,
+DPI, jenis printer, dan penanda cetak otomatis saat maksimum.
 
 **Di bawah template print** tampil **data master box yang menunggu verifikasi**
 (kode box, produk, batch/MFD, isi box, status cetak dan verifikasi) selama
