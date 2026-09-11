@@ -1,0 +1,34 @@
+QMainWindow, QGraphicsView { background: #c6d9e6; border: none; }
+QDialog { background: #05243c; color: #eaf4ff; }
+QLabel, QCheckBox, QGroupBox { color: #eaf4ff; font-size: 13px; }
+QLabel#dialogTitle { font-size: 24px; font-weight: 600; color: #ffffff; }
+QLabel#help { color: #adc8db; font-size: 12px; }
+QLabel#result { font-size: 17px; font-weight: 600; color: #7de65d; padding: 10px; background: #07344b; border-radius: 5px; }
+QLineEdit, QComboBox, QPlainTextEdit, QSpinBox { color:#eaf4ff; background:#001b30; border:1px solid #3e627c; border-radius:4px; padding:8px; selection-background-color:#087dc2; font-size:13px; }
+QLineEdit:focus, QComboBox:focus { border:1px solid #4dc8ff; }
+QPushButton { color:#edf7ff; background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #096faa,stop:1 #064268); padding:10px 17px; border:1px solid #2b8abe; border-radius:5px; font-size:13px; }
+QPushButton:hover { background:#1685c5; border:1px solid #79d3ff; }
+QPushButton:focus { border:2px solid #a7e3ff; }
+QPushButton:pressed { background:#003351; }
+QPushButton:disabled { color:#7f96a6; background:#17374a; border-color:#385365; }
+QTableWidget { background:#001e34; alternate-background-color:#062b44; color:#e2f1fc; gridline-color:#26465c; border:1px solid #34576c; font-size:12px; selection-background-color:#0b6090; }
+QHeaderView::section { background:#0b3853; color:#dcefff; border:0; border-bottom:1px solid #47728c; padding:8px 4px; font-size:11px; }
+QTableWidget::item { padding:5px; }
+QGroupBox { border:1px solid #35556c; border-radius:5px; margin-top:10px; padding-top:15px; }
+QGroupBox::title { subcontrol-origin:margin; left:12px; padding:0 6px; }
+QComboBox QAbstractItemView { color:#ecf8ff; background:#062d46; selection-background-color:#096ba2; }
+QScrollBar:vertical { background:#092d42; width:11px; }
+QScrollBar::handle:vertical { background:#3b6b87; min-height:25px; border-radius:4px; }
+QToolTip { background:#072b44; color:#f0f8ff; border:1px solid #4394bd; padding:6px; }
+
+/* Integrated scroll controls: no native white arrows or corner squares. */
+QScrollBar:vertical {background:#03283d;width:10px;margin:0;border:0;}
+QScrollBar:horizontal {background:#03283d;height:10px;margin:0;border:0;}
+QScrollBar::handle:vertical {background:#376982;min-height:24px;border-radius:4px;}
+QScrollBar::handle:horizontal {background:#376982;min-width:24px;border-radius:4px;}
+QScrollBar::handle:hover {background:#498ba8;}
+QScrollBar::add-line,QScrollBar::sub-line {height:0;width:0;background:transparent;border:0;}
+QScrollBar::add-page,QScrollBar::sub-page {background:none;}
+QAbstractScrollArea::corner {background:#03283d;border:0;}
+QTableCornerButton::section {background:#0a324c;border:0;}
+QComboBox QAbstractItemView {outline:0;border:1px solid #367995;}

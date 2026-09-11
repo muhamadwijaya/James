@@ -1,0 +1,1 @@
+"""AGREGASI desktop application."""
