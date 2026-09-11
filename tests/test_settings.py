@@ -9,11 +9,12 @@ from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
-from PySide6.QtCore import QDate, QTime
+from PySide6.QtCore import QDate, QTime, Qt
+from PySide6.QtGui import QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from agregasi.store import Store
-from agregasi.settings_model import SettingsRepository, defaults, validate
+from agregasi.settings_model import SettingsRepository, defaults, validate, scanner_camera_url
 from agregasi.settings_page import SettingsPage
 from agregasi.settings_runtime import SettingsRuntime
 from agregasi.template_model import default_document, new_element
@@ -115,7 +116,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_controls_buttons_and_theme(self):
         self.page=SettingsPage(self.store)
-        self.assertEqual(len(self.page.controls),53)
+        self.assertEqual(len(self.page.controls),59)
         for name in ('test_connection','test_print_all','calibrate_scanner','calibrate_camera','add_user','edit_user','backup_now','restore_config','export_config','clear_temp','export_log','check_update','save_settings','reload_settings','reset_settings','test_devices','reveal_token'):
             self.assertTrue(self.page.buttons[name].isEnabled(),name)
         self.page.controls['language'].setCurrentText('ENGLISH');self.page.controls['theme'].setCurrentText('HIGH CONTRAST')
@@ -138,6 +139,58 @@ class SettingsTests(unittest.TestCase):
         finally:
             if self.runtime:self.runtime.shutdown()
             os.close(master);os.close(slave)
+
+    def test_scanner_mode_camera_requires_a_reachable_address(self):
+        cfg=defaults();profile=cfg['scanners']['BOX']
+        self.assertEqual(profile['mode'],'SCANNER GUN')
+        profile.update(mode='KAMERA IP',camera_ip='192.168.10.31',camera_port=8080)
+        self.assertEqual(scanner_camera_url(validate(cfg)['scanners']['BOX']),'http://192.168.10.31:8080/snapshot.jpg')
+        profile['camera_ip']='http://10.0.0.5/cgi-bin/frame.cgi';profile['camera_port']=81
+        self.assertEqual(scanner_camera_url(validate(cfg)['scanners']['BOX']),'http://10.0.0.5:81/cgi-bin/frame.cgi')
+        for value,key in (('',"camera_ip"),('ftp://10.0.0.5','camera_ip'),(0,'camera_port'),(99999,'camera_port')):
+            broken=defaults();broken['scanners']['BOX'].update(mode='KAMERA IP',camera_ip='10.0.0.5',camera_port=8080)
+            broken['scanners']['BOX'][key]=value
+            with self.assertRaises(ValueError):self.repo.save(broken)
+        self.assertEqual(self.repo.load()['scanners']['BOX']['mode'],'SCANNER GUN')
+
+    def test_camera_scanner_streams_frames_and_never_invents_a_scan(self):
+        frame=QImage(96,64,QImage.Format.Format_RGB32);frame.fill(Qt.GlobalColor.white)
+        path=self.root/'frame.png';self.assertTrue(frame.save(str(path),'PNG'));body=path.read_bytes()
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_GET(self):
+                self.send_response(200);self.send_header('Content-Type','image/png');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            cfg=defaults();cfg['scanners']['BOX'].update(mode='KAMERA IP',camera_ip='127.0.0.1',camera_port=server.server_port)
+            self.repo.save(cfg);self.runtime=SettingsRuntime(self.store)
+            frames=[];received=[]
+            self.runtime.camera_frame.connect(lambda level,image:frames.append((level,image.width())))
+            self.runtime.scan_received.connect(lambda level,value:received.append((level,value)))
+            message=self.runtime.listen_scanner('BOX')
+            self.assertIn(f'127.0.0.1:{server.server_port}',message)
+            for _ in range(120):
+                QTest.qWait(25)
+                if frames:break
+            self.assertEqual(frames[0],('BOX',96))
+            # A blank frame holds no barcode, so no scan may be reported.
+            self.assertEqual(received,[])
+            self.assertIn(self.runtime.status['scanner_BOX']['status'],('KAMERA ONLINE','DEKODER TIDAK SIAP'))
+            self.runtime.stop_scanner_camera('BOX');count=len(frames);QTest.qWait(120);self.assertEqual(len(frames),count)
+        finally:
+            server.shutdown();server.server_close();thread.join(timeout=2)
+
+    def test_tij_template_prints_to_the_address_stored_on_the_template(self):
+        self.runtime=SettingsRuntime(self.store)
+        doc=default_document('BOX');doc.update(width_mm=60,height_mm=40,dpi=203,printer_kind='TIJ',printer_host='127.0.0.1',printer_port=9105)
+        doc['elements']=[new_element('text',3,3,54,8,text='TIJ',font=12)]
+        with patch('agregasi.settings_runtime.socket.create_connection') as connection:
+            self.assertTrue(self.runtime.print_tij(doc))
+            target=connection.call_args.args[0];payload=connection.return_value.__enter__.return_value.sendall.call_args.args[0]
+        self.assertEqual(target,('127.0.0.1',9105));self.assertIn(b'^GFA,',payload);self.assertIn(b'^PW480',payload)
+        self.assertEqual(self.runtime.status['printer_BOX']['status'],'TERKIRIM')
+        doc['printer_host']=''
+        with self.assertRaises(ValueError):self.runtime.print_tij(doc)
 
     def test_zpl_uses_selected_darkness_speed_and_resolution(self):
         cfg=defaults();cfg['printers']['BOX'].update(device='tcp://127.0.0.1:9100',dpi=203,darkness=20,speed=4)

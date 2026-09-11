@@ -8,7 +8,7 @@ from datetime import datetime
 
 from PySide6.QtCore import QByteArray,QBuffer,QIODevice,QRectF,QSize,Qt
 from PySide6.QtGui import QColor,QImageReader,QPainter,QPixmap
-from PySide6.QtWidgets import (QWidget,QTabWidget,QFormLayout,QVBoxLayout,QHBoxLayout,QGridLayout,
+from PySide6.QtWidgets import (QWidget,QTabWidget,QFormLayout,QVBoxLayout,QHBoxLayout,QGridLayout,QScrollArea,
     QLabel,QLineEdit,QSpinBox,QDoubleSpinBox,QComboBox,QCheckBox,QPushButton,QToolButton,QMenu,QRadioButton,QStackedWidget,QDialog,QFrame,
     QPlainTextEdit,QTableWidget,QTableWidgetItem,QAbstractItemView,QHeaderView,QFileDialog,QMessageBox)
 
@@ -108,7 +108,7 @@ class TemplateWorkspace(QWidget):
     PAGE_SIZE=4
     PREVIEW_PAGE_SIZE=5
     def __init__(self,owner,level):
-        super().__init__(owner.stack);self.owner=owner;self.level=level;self.repo=owner.repo;self.syncing=False;self.identifier=None;self.list_page=0
+        super().__init__(owner.stack);self.owner=owner;self.level=level;self.repo=owner.repo;self.syncing=False;self.identifier=None;self.list_page=0;self._pending_tij=False
         rows=self.repo.list(level);doc=self.repo.get(rows[0]['id'])['document'] if rows else default_document(level)
         if rows:self.identifier=rows[0]['id']
         self.setObjectName('TemplateWorkspace');self.setStyleSheet(CONTROL_STYLE)
@@ -174,15 +174,15 @@ class TemplateWorkspace(QWidget):
         button.setToolTip(text);button.clicked.connect(lambda checked=False:self.guard(callback));return button
 
     def _make_metadata(self):
-        panel=QWidget();layout=QVBoxLayout(panel);layout.setContentsMargins(9,8,9,7);layout.setSpacing(6)
-        form=QFormLayout();form.setSpacing(4);form.setLabelAlignment(Qt.AlignmentFlag.AlignVCenter);layout.addLayout(form)
+        panel=QWidget();layout=QVBoxLayout(panel);layout.setContentsMargins(9,6,9,5);layout.setSpacing(4)
+        form=QFormLayout();form.setSpacing(1);form.setLabelAlignment(Qt.AlignmentFlag.AlignVCenter);layout.addLayout(form)
         self.name_edit=QLineEdit();self.name_edit.setMaxLength(120);self.gtin=QLineEdit();self.gtin.setMaxLength(14)
         self.nie=QLineEdit();self.nie.setMaxLength(80);self.nie.setPlaceholderText("Nomor izin edar")
         self.product_name=QLineEdit();self.product_name.setMaxLength(120)
         self.target_min=QSpinBox();self.target_max=QSpinBox()
-        for widget in (self.target_min,self.target_max):widget.setRange(1,1000000);widget.setFixedHeight(25)
+        for widget in (self.target_min,self.target_max):widget.setRange(1,1000000);widget.setFixedHeight(23)
         self.print_mode=SerialChoice({'AUTO':'Auto print','MANUAL':'Manual print'});self.print_mode.setCurrentText('MANUAL')
-        self.print_mode.setToolTip('Setelah target maksimum tercapai: Auto mengirim label, Manual menunggu tombol Print Label.')
+        self.print_mode.setToolTip('Target maksimum selalu mencetak label otomatis. Pilihan ini berlaku saat box dikunci sebelum target maksimum: Auto mencetak langsung, Manual menunggu tombol Print Label.')
         self.prefix=QComboBox();self.prefix.setEditable(True);self.prefix.addItems([{'BOX':'BOX','CARTON':'CTN','PALLET':'PLT'}[self.level]])
         self.prefix.lineEdit().setMaxLength(20);prefix_row=QWidget();pl=QVBoxLayout(prefix_row);pl.setContentsMargins(0,0,0,0);pl.setSpacing(1);pl.addWidget(self.prefix)
         self.prefix_counter=QLabel();self.prefix_counter.setFixedHeight(11);self.prefix_counter.setAlignment(Qt.AlignmentFlag.AlignRight);self.prefix_counter.setStyleSheet('color:#98b4ca;font-size:8px;');self.prefix_counter.hide()
@@ -190,42 +190,65 @@ class TemplateWorkspace(QWidget):
         for w in (self.min_digits,self.max_digits):w.setRange(1,50)
         self.width_mm_edit=QDoubleSpinBox();self.height_mm_edit=QDoubleSpinBox()
         for w in (self.width_mm_edit,self.height_mm_edit):w.setRange(20,300);w.setDecimals(1);w.setSuffix(' mm')
-        self.dpi=QComboBox();self.dpi.addItems(['203','300','600']);self.dpi.setEditable(True)
-        self.paper_dialog=QDialog(self);self.paper_dialog.setWindowTitle('Ukuran label dan resolusi');self.paper_dialog.setStyleSheet(self.paper_dialog.styleSheet()+CONTROL_STYLE);self.paper_dialog.resize(350,205)
-        paper_layout=QFormLayout(self.paper_dialog)
-        for title,widget in [('Lebar',self.width_mm_edit),('Tinggi',self.height_mm_edit),('DPI',self.dpi)]:paper_layout.addRow(title,widget)
-        done=QPushButton('TERAPKAN');done.clicked.connect(lambda:self.paper_dialog.accept() if self.guard(self.apply_metadata) else None);paper_layout.addRow(done)
+        self.width_mm_edit.setToolTip('Lebar canvas label (mm).');self.height_mm_edit.setToolTip('Tinggi canvas label (mm).')
+        self.dpi=QComboBox();self.dpi.addItems(['203','300','600']);self.dpi.setEditable(True);self.dpi.setToolTip('Resolusi cetak canvas.')
+        self.paper_dialog=QDialog(self);self.paper_dialog.setWindowTitle('Ukuran canvas dan resolusi');self.paper_dialog.setStyleSheet(self.paper_dialog.styleSheet()+CONTROL_STYLE);self.paper_dialog.resize(360,170)
+        paper_layout=QVBoxLayout(self.paper_dialog)
+        self.paper_summary=QLabel();self.paper_summary.setWordWrap(True);paper_layout.addWidget(self.paper_summary)
+        note=QLabel('Ukuran canvas (lebar dan tinggi) serta DPI kini diatur langsung pada form template.');note.setWordWrap(True);paper_layout.addWidget(note)
+        done=QPushButton('BUKA FORM TEMPLATE')
+        done.clicked.connect(lambda:(self.tabs.setCurrentIndex(0),self.width_mm_edit.setFocus(),self.paper_dialog.accept()));paper_layout.addWidget(done)
         self.meta_widgets={'name':self.name_edit,'gtin':self.gtin,'nie':self.nie,'prefix':self.prefix,'serial_type':self.serial_type,'min_digits':self.min_digits,'max_digits':self.max_digits,'width_mm':self.width_mm_edit,'height_mm':self.height_mm_edit,'dpi':self.dpi}
         digits=QWidget();dl=QHBoxLayout(digits);dl.setContentsMargins(0,0,0,0);dl.setSpacing(5)
         for caption,widget in [('Min',self.min_digits),('Max',self.max_digits)]:dl.addWidget(QLabel(caption));dl.addWidget(widget,1)
-        fields=[('NAMA '+self.level+' *',self.name_edit),('NAMA PRODUK',self.product_name),('GTIN *',self.gtin),('NIE',self.nie),('PREFIX *',prefix_row),('TIPE SERIAL *',self.serial_type),('DIGIT SERIAL *',digits)]
+        canvas_size=QWidget();sl=QHBoxLayout(canvas_size);sl.setContentsMargins(0,0,0,0);sl.setSpacing(5)
+        for caption,widget in [('Lebar',self.width_mm_edit),('Tinggi',self.height_mm_edit)]:sl.addWidget(QLabel(caption));sl.addWidget(widget,1)
+        fields=[('NAMA '+self.level+' *',self.name_edit),('NAMA PRODUK',self.product_name),('GTIN *',self.gtin),('NIE',self.nie),('PREFIX *',prefix_row),('TIPE SERIAL *',self.serial_type),('DIGIT SERIAL *',digits),('UKURAN CANVAS *',canvas_size),('DPI CETAK *',self.dpi)]
         for label,widget in fields:
-            widget.setFixedHeight(25);form.addRow(label,widget)
+            widget.setFixedHeight(23);form.addRow(label,widget)
         self.product_name.editingFinished.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
-        self.child=QComboBox();self.child.setFixedHeight(26)
-        self.child_product=QComboBox();self.child_product.setFixedHeight(26);self.child_product.setToolTip('Pilih produk child dari database; relasi ID akan disimpan.')
+        self.child=QComboBox();self.child.setFixedHeight(24)
+        self.child_product=QComboBox();self.child_product.setFixedHeight(24);self.child_product.setToolTip('Pilih produk child dari database; relasi ID akan disimpan.')
         self.child_mode=SerialChoice({'BOX':'Lewat BOX','UNIT':'Produk child'}) if self.level=='CARTON' else None
         if self.child_mode:
-            self.child_mode.setFixedHeight(25);form.addRow('SUMBER CHILD',self.child_mode)
+            self.child_mode.setFixedHeight(23);form.addRow('SUMBER CHILD',self.child_mode)
             self.child_mode.currentTextChanged.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
         product_row=QWidget();pr=QHBoxLayout(product_row);pr.setContentsMargins(0,0,0,0);pr.setSpacing(4);pr.addWidget(self.child_product,1)
-        self.product_source_button=QPushButton('…');self.product_source_button.setFixedSize(26,26);self.product_source_button.setToolTip('Pilih database, tabel, kolom ID dan nama produk child');self.product_source_button.clicked.connect(self.configure_product_source);pr.addWidget(self.product_source_button)
-        self.child_stack=QStackedWidget();self.child_stack.setFixedHeight(26);self.child_stack.addWidget(self.child);self.child_stack.addWidget(product_row)
+        self.product_source_button=QPushButton('…');self.product_source_button.setFixedSize(24,24);self.product_source_button.setToolTip('Pilih database, tabel, kolom ID dan nama produk child');self.product_source_button.clicked.connect(self.configure_product_source);pr.addWidget(self.product_source_button)
+        self.child_stack=QStackedWidget();self.child_stack.setFixedHeight(24);self.child_stack.addWidget(self.child);self.child_stack.addWidget(product_row)
         self.child_caption=QLabel();form.addRow(self.child_caption,self.child_stack)
         targets=QWidget();tl=QHBoxLayout(targets);tl.setContentsMargins(0,0,0,0);tl.setSpacing(5)
         for caption,widget in [('Min',self.target_min),('Max',self.target_max)]:tl.addWidget(QLabel(caption));tl.addWidget(widget,1)
-        form.addRow('TARGET QTY *',targets);self.print_mode.setFixedHeight(25);form.addRow('CETAK LABEL',self.print_mode)
+        form.addRow('TARGET QTY *',targets);self.print_mode.setFixedHeight(23);form.addRow('CETAK LABEL',self.print_mode)
+        self.printer_kind=self.printer_host=self.printer_port=None
+        if self.level=='BOX':
+            self.printer_kind=SerialChoice({'LABEL':'Printer label','TIJ':'TIJ / thermal'});self.printer_kind.setFixedHeight(23)
+            self.printer_kind.setToolTip('Label: driver printer pada Pengaturan. TIJ: kirim langsung ke print head thermal melalui IP dan port.')
+            form.addRow('JENIS PRINTER *',self.printer_kind)
+            self.printer_host=QLineEdit();self.printer_host.setMaxLength(200);self.printer_host.setPlaceholderText('IP printer TIJ')
+            self.printer_port=QSpinBox();self.printer_port.setRange(1,65535);self.printer_port.setFixedWidth(72)
+            self.tij_row=QWidget();tij=QHBoxLayout(self.tij_row);tij.setContentsMargins(0,0,0,0);tij.setSpacing(5)
+            tij.addWidget(self.printer_host,1);tij.addWidget(QLabel('Port'));tij.addWidget(self.printer_port)
+            self.tij_row.setFixedHeight(23);self.tij_caption=QLabel('KONEKSI TIJ *');form.addRow(self.tij_caption,self.tij_row)
+            self.printer_kind.currentTextChanged.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
+            self.printer_host.editingFinished.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
+            self.printer_port.editingFinished.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
         for widget in (self.target_min,self.target_max):widget.editingFinished.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
         self.print_mode.currentTextChanged.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
         self.child.currentIndexChanged.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
         self.child_product.currentIndexChanged.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
-        self.info=QFrame();self.info.setObjectName('templateInfo');info_layout=QGridLayout(self.info);info_layout.setContentsMargins(8,5,8,5);info_layout.setVerticalSpacing(1)
+        self.info=QFrame();self.info.setObjectName('templateInfo');info_layout=QGridLayout(self.info);info_layout.setContentsMargins(8,3,8,3);info_layout.setVerticalSpacing(0)
         title=QLabel('INFORMASI TEMPLATE TERPILIH');title.setStyleSheet('font-size:9px;color:#dcefff;');info_layout.addWidget(title,0,0)
         self.enabled_check=QCheckBox('Aktif');self.enabled_check.setChecked(True);info_layout.addWidget(self.enabled_check,0,1,Qt.AlignmentFlag.AlignRight)
         self.info_values={}
-        for i,(key,label) in enumerate([('child','Child terikat'),('target','Target agregasi'),('print','Cetak saat max')],1):
+        for i,(key,label) in enumerate([('child','Child terikat'),('target','Target agregasi'),('print','Cetak saat max'),('printer','Jenis printer')],1):
             caption=QLabel(label);caption.setStyleSheet('font-size:9px;');value=QLabel();value.setStyleSheet('font-size:9px;color:#e8f2fb;');info_layout.addWidget(caption,i,0);info_layout.addWidget(value,i,1);self.info_values[key]=value
-        info_layout.setColumnStretch(1,1);layout.addWidget(self.info);layout.addStretch();self.tabs.addTab(panel,'Template')
+        info_layout.setColumnStretch(1,1);layout.addWidget(self.info);layout.addStretch()
+        # The form grew past the panel height; scrolling keeps every field reachable.
+        scroll=QScrollArea();scroll.setWidget(panel);scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet('QScrollArea,QScrollArea > QWidget > QWidget {background:transparent;} QScrollBar:vertical {width:9px;background:#042e47;margin:0;} QScrollBar::handle:vertical {background:#17628c;border-radius:4px;min-height:28px;} QScrollBar::add-line,QScrollBar::sub-line {height:0;}')
+        self.tabs.addTab(scroll,'Template')
         for widget in self.meta_widgets.values():
             if isinstance(widget,(QComboBox,SerialChoice)):widget.currentTextChanged.connect(lambda value:self.guard(self.apply_metadata) if not self.syncing else None)
             else:widget.editingFinished.connect(lambda:self.guard(self.apply_metadata) if not self.syncing else None)
@@ -241,6 +264,11 @@ class TemplateWorkspace(QWidget):
             self.product_name.setText(self.document['data'].get('product_name',''));self.product_name.setCursorPosition(0)
             self.target_min.setValue(self.document.get('aggregation_min',1));self.target_max.setValue(self.document.get('aggregation_max',{'BOX':50,'CARTON':12,'PALLET':16}[self.level]));self.print_mode.setCurrentText(self.document.get('print_mode','MANUAL'))
             if self.child_mode:self.child_mode.setCurrentText(self.document['child_level'])
+            if self.printer_kind:
+                if not getattr(self,'_pending_tij',False):self.printer_kind.setCurrentText(self.document.get('printer_kind','LABEL'))
+                if not self.printer_host.hasFocus():
+                    self.printer_host.setText(str(self.document.get('printer_host','')));self.printer_host.setCursorPosition(0)
+                self.printer_port.setValue(int(self.document.get('printer_port',9100)));self.refresh_printer_fields()
             self.enabled_check.setChecked(self.document.get('active',True));self.refresh_sources();self.update_info()
         finally:self.syncing=False
     def apply_metadata(self):
@@ -256,6 +284,13 @@ class TemplateWorkspace(QWidget):
         doc['active']=self.enabled_check.isChecked()
         doc['aggregation_min']=self.target_min.value();doc['aggregation_max']=self.target_max.value();doc['print_mode']=self.print_mode.currentText()
         doc['child_level']=self.child_mode.currentText() if self.child_mode else ('UNIT' if self.level=='BOX' else 'CARTON')
+        if self.printer_kind:
+            kind=self.printer_kind.currentText();host=self.printer_host.text().strip();self.refresh_printer_fields()
+            # TIJ needs an address: while the operator is still typing it the
+            # document keeps the label printer instead of failing validation.
+            self._pending_tij=kind=='TIJ' and not host
+            doc['printer_kind']='LABEL' if self._pending_tij else kind
+            doc['printer_host']=host;doc['printer_port']=self.printer_port.value()
         if doc['child_level']=='UNIT':
             doc['child_product']=deepcopy(self.child_product.currentData());doc['child_template_id']=None
             doc['child_template_name']=doc['child_product']['name'] if doc['child_product'] else ''
@@ -271,6 +306,11 @@ class TemplateWorkspace(QWidget):
                 for key in ('x','w'):e[key]*=doc['width_mm']/old_w
                 for key in ('y','h'):e[key]*=doc['height_mm']/old_h
         validate_document(doc);self.canvas.change(doc,'Ubah pengaturan template');return True
+    def refresh_printer_fields(self):
+        """Only a TIJ head needs a network address; hide it for label printers."""
+        if not self.printer_kind:return
+        tij=self.printer_kind.currentText()=='TIJ'
+        self.tij_row.setVisible(tij);self.tij_caption.setVisible(tij)
     def _make_properties(self):
         panel=QWidget();layout=QVBoxLayout(panel);layout.setContentsMargins(9,9,9,9);layout.setSpacing(7)
         self.selected_label=QLabel('Pilih objek pada canvas.');layout.addWidget(self.selected_label)
@@ -423,7 +463,7 @@ class TemplateWorkspace(QWidget):
             b.setMenu(menu);layout.addWidget(b)
         self.grid_button=self.tool_button(bar,'grid','Tampilkan grid',self.set_grid,26);self.grid_button.setCheckable(True);self.grid_button.setChecked(True);layout.addWidget(self.grid_button)
         self.snap_button=self.tool_button(bar,'snap','Snap 0,5 mm',self.set_snap,26);self.snap_button.setCheckable(True);self.snap_button.setChecked(True);layout.addWidget(self.snap_button)
-        self.paper_button=self.tool_button(bar,'paper','Ukuran label / DPI',self.paper_dialog.exec,26);layout.addWidget(self.paper_button)
+        self.paper_button=self.tool_button(bar,'paper','Ukuran canvas / DPI',self.paper_dialog.exec,26);layout.addWidget(self.paper_button)
         for name,title,index in [('save','Form template',0),('settings','Properti objek',1),('dynamic','Data dinamis',2)]:layout.addWidget(self.tool_button(bar,name,title,lambda i=index:self.tabs.setCurrentIndex(i),26))
         layout.addStretch()
         for name,direction in [('zoom_out',-1),('zoom_in',1)]:layout.addWidget(self.tool_button(bar,name,'Perkecil' if direction<0 else 'Perbesar',lambda d=direction:self.step_zoom(d),24))
@@ -535,13 +575,13 @@ class TemplateWorkspace(QWidget):
             if self.confirm_discard():self.load_template(identifier)
             else:self.refresh_list()
     def load_template(self,identifier):
-        self._data_dirty=False
+        self._data_dirty=False;self._pending_tij=False
         row=self.repo.get(identifier)
         if row['level']!=self.level:raise ValueError('Template berasal dari level lain.')
         self.identifier=identifier;self.canvas.set_document(row['document']);self.populate_metadata();self.populate_data();self.refresh_list(focus=True);self.tabs.setCurrentIndex(0);self.message('Template dimuat.')
     def new_template(self):
         if not self.confirm_discard():return False
-        self._data_dirty=False
+        self._data_dirty=False;self._pending_tij=False
         doc=default_document(self.level)
         cfg=self.owner.store.get('configuration',{})
         if cfg:
@@ -596,7 +636,11 @@ class TemplateWorkspace(QWidget):
         from PySide6.QtGui import QFontMetrics
         d=self.document;self.prefix_counter.setText(str(len(d['prefix']))+' / 20')
         child=(d.get('child_product') or {}).get('name') if d['child_level']=='UNIT' else d.get('child_template_name')
-        values={'child':child or 'Belum dipilih','target':f"{d.get('aggregation_min',1)} – {d.get('aggregation_max',1)} {d['child_level']}",'print':'AUTO PRINT' if d.get('print_mode')=='AUTO' else 'MANUAL PRINT'}
+        printer='TIJ '+(d.get('printer_host') or '—')+':'+str(d.get('printer_port',9100)) if d.get('printer_kind')=='TIJ' else 'PRINTER LABEL'
+        values={'child':child or 'Belum dipilih','target':f"{d.get('aggregation_min',1)} – {d.get('aggregation_max',1)} {d['child_level']}",
+                'print':'OTOMATIS SAAT MAX • '+('AUTO PRINT' if d.get('print_mode')=='AUTO' else 'MANUAL saat kunci awal'),
+                'printer':printer}
+        if hasattr(self,'paper_summary'):self.paper_summary.setText(f"Canvas saat ini: {d['width_mm']:g} × {d['height_mm']:g} mm • {d['dpi']} DPI")
         for key,value in values.items():
             widget=self.info_values[key];widget.setToolTip(str(value));widget.setText(QFontMetrics(ui_font(9)).elidedText(': '+str(value),Qt.TextElideMode.ElideRight,166))
     def turn_page(self,direction):self.list_page+=direction;self.refresh_list()

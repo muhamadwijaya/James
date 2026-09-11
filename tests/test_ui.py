@@ -76,6 +76,7 @@ class UiTests(unittest.TestCase):
         page = self.window.pages['box']
         self.assertIsInstance(page, OperationPage)
         page.template_selector.setCurrentIndex(1)
+        page.local_action('stage_lock')
         before = len(self.store.events())
         page.scan_input.setText('UNIT-UI-001')
         QTest.keyClick(page.scan_input, Qt.Key.Key_Return)

@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from PySide6.QtCore import QPointF,Qt,QTimer
 from PySide6.QtTest import QTest
@@ -343,17 +344,56 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(doc['child_template_id'],self.page.editors['BOX'].identifier)
         row=self.store.db.execute('SELECT * FROM template_agregasi WHERE template_id=?',(editor.identifier,)).fetchone();self.assertEqual(row['target_max'],10);self.assertIsNone(row['child_product_id'])
 
+    def test_canvas_size_fields_live_on_every_master_template_form(self):
+        for level in ('BOX','CARTON','PALLET'):
+            editor=self.page.editors[level];self.page.select_level(level);self.app.processEvents()
+            panel=editor.tabs.widget(0)
+            for widget in (editor.width_mm_edit,editor.height_mm_edit,editor.dpi):
+                self.assertTrue(panel.isAncestorOf(widget),(level,widget.objectName()))
+            editor.width_mm_edit.setValue(90);editor.height_mm_edit.setValue(70);editor.dpi.setCurrentText('203');editor.apply_metadata()
+            self.assertEqual((editor.document['width_mm'],editor.document['height_mm'],editor.document['dpi']),(90,70,203))
+            validate_document(editor.document);editor.save()
+            saved=self.page.repo.get(editor.identifier)['document']
+            self.assertEqual((saved['width_mm'],saved['height_mm'],saved['dpi']),(90,70,203))
+            self.assertIn('90 × 70 mm • 203 DPI',editor.paper_summary.text())
+
+    def test_box_template_selects_label_or_tij_printer_with_address(self):
+        box=self.page.editors['BOX'];self.page.select_level('BOX');self.app.processEvents()
+        self.assertIsNone(self.page.editors['CARTON'].printer_kind);self.assertIsNone(self.page.editors['PALLET'].printer_kind)
+        self.assertEqual(box.document['printer_kind'],'LABEL');self.assertFalse(box.tij_row.isVisibleTo(box.tabs.widget(0)))
+        box.printer_kind.setCurrentText('TIJ')
+        # An address is required before the document switches to the TIJ head.
+        self.assertTrue(box.tij_row.isVisibleTo(box.tabs.widget(0)));self.assertEqual(box.document['printer_kind'],'LABEL')
+        box.printer_host.setText('192.168.10.40');box.printer_port.setValue(9101);box.apply_metadata();box.save()
+        saved=self.page.repo.get(box.identifier)['document']
+        self.assertEqual((saved['printer_kind'],saved['printer_host'],saved['printer_port']),('TIJ','192.168.10.40',9101))
+        self.assertIn('TIJ 192.168.10.40:9101',box.info_values['printer'].toolTip())
+        printed=[]
+        with patch.object(self.window.settings_runtime,'print_tij',lambda doc:printed.append(doc) or True):
+            self.assertTrue(self.page.print_document(saved,box.identifier))
+        self.assertEqual(printed[0]['printer_host'],'192.168.10.40')
+        box.printer_kind.setCurrentText('LABEL');box.apply_metadata();box.save()
+        self.assertEqual(self.page.repo.get(box.identifier)['document']['printer_kind'],'LABEL')
+
     def test_operation_auto_and_manual_use_saved_settings(self):
         editor=self.page.editors['BOX'];editor.target_max.setValue(2);editor.print_mode.setCurrentText('AUTO');editor.save()
         operation=self.window.pages['box'];self.window.navigate('box');operation.refresh();self.app.processEvents();self.assertTrue(operation.template_selector.isVisible());printed=[]
         operation.print_callback=lambda doc,identifier,automatic:printed.append((doc,identifier,automatic)) or True
-        operation.template_selector.setCurrentIndex(operation.template_selector.findData(editor.identifier))
+        operation.template_selector.setCurrentIndex(operation.template_selector.findData(editor.identifier));operation.local_action('stage_lock')
         for code in ('QA-U1','QA-U2'):
             operation.scan_input.setText(code);operation.scan()
         self.assertEqual(len(printed),1);self.assertTrue(printed[0][2]);self.assertEqual(printed[0][0]['data']['quantity'],'2 UNIT')
-        editor.print_mode.setCurrentText('MANUAL');editor.target_max.setValue(1);editor.save()
-        operation.local_action('stage_reset');operation.template_selector.setCurrentIndex(operation.template_selector.findData(editor.identifier));operation.scan_input.setText('QA-U3');operation.scan();self.assertEqual(len(printed),1)
+        # Below the maximum an early lock follows the template print mode.
+        editor.print_mode.setCurrentText('MANUAL');editor.target_min.setValue(1);editor.target_max.setValue(3);editor.save()
+        operation.local_action('stage_reset');operation.template_selector.setCurrentIndex(operation.template_selector.findData(editor.identifier));operation.local_action('stage_lock')
+        operation.scan_input.setText('QA-U3');operation.scan();self.assertEqual(len(printed),1)
+        operation.local_action('stage_close_box');self.assertEqual(len(printed),1)
         operation.local_action('stage_print_label');self.assertEqual(len(printed),2);self.assertFalse(printed[1][2])
+        # Reaching the maximum always prints automatically, MANUAL included.
+        operation.local_action('stage_reset');editor.target_max.setValue(1);editor.save()
+        operation.template_selector.setCurrentIndex(operation.template_selector.findData(editor.identifier));operation.local_action('stage_lock')
+        operation.scan_input.setText('QA-U4');operation.scan()
+        self.assertEqual(len(printed),3);self.assertTrue(printed[2][2])
 
     def test_toolbar_grid_snap_zoom_and_layer_actions(self):
         editor=self.page.active_editor;canvas=editor.canvas

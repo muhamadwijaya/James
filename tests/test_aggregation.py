@@ -69,6 +69,13 @@ class AggregationTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.runtime.claim_print(run['id'])
         run=self.runtime.scan(run['id'],'M2');run=self.runtime.finish_partial(run['id']);self.assertEqual(run['print_state'],'WAITING')
         self.assertFalse(self.runtime.claim_print(run['id'],automatic=True));self.assertTrue(self.runtime.claim_print(run['id']))
+    def test_maximum_target_always_queues_the_automatic_label(self):
+        identifier=self.repo.save(self.document(maximum=2,mode='MANUAL'));run=self.runtime.start(identifier)
+        run=self.runtime.scan(run['id'],'X1');self.assertEqual(run['print_state'],'WAITING')
+        run=self.runtime.scan(run['id'],'X2')
+        self.assertEqual(run['state'],'COMPLETE');self.assertEqual(run['print_state'],'PENDING')
+        self.assertTrue(self.runtime.claim_print(run['id'],automatic=True))
+
     def test_carton_via_box_requires_completed_selected_box(self):
         box_id=self.repo.save(self.document(maximum=1));box=self.runtime.start(box_id);box=self.runtime.scan(box['id'],'RAW-1')
         doc=self.document('CARTON',maximum=1);doc['child_template_id']=box_id;carton_id=self.repo.save(doc);carton=self.runtime.start(carton_id)

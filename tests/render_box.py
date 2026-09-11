@@ -11,7 +11,7 @@ from agregasi.store import Store
 app=QApplication([]);app.setStyle('Fusion');app.setStyleSheet((ROOT/'styles/theme.qss').read_text());out=ROOT/'docs/box_lengkap';out.mkdir(exist_ok=True)
 with tempfile.TemporaryDirectory() as tmp:
  store=Store(Path(tmp)/'db');window=MainWindow(store);window.navigate('box');window.resize(1448,1086);window.show();app.processEvents();page=window.pages['box']
- page.template_selector.setCurrentIndex(1)
+ page.template_selector.setCurrentIndex(1);page.local_action('stage_lock')
  for serial in ('UNIT2505010001','UNIT2505010002','UNIT2505010003'):
   page.scan_input.setText(serial);page.scan()
  page.message='PRATINJAU DATA UJI • 3 unit diterima dari sesi tersimpan.';app.processEvents();page.grab().save(str(out/'box-lengkap.png'))

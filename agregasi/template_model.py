@@ -10,6 +10,7 @@ from uuid import uuid4
 LEVELS = ('BOX', 'CARTON', 'PALLET')
 PREFIXES = {'BOX': 'BOX', 'CARTON': 'CTN', 'PALLET': 'PLT'}
 KINDS = {'text', 'barcode', 'datamatrix', 'qr', 'rectangle', 'line', 'image', 'symbol'}
+PRINTER_KINDS = ('LABEL', 'TIJ')
 FIELDS = ('serial', 'gtin', 'nie', 'prefix', 'product_name', 'batch', 'mfg_date', 'exp_date',
           'destination', 'ship_to', 'quantity', 'weight', 'template_name')
 
@@ -31,7 +32,7 @@ def default_document(level):
            'min_digits': 4, 'max_digits': 18, 'child_level': {'BOX':'UNIT','CARTON':'BOX','PALLET':'CARTON'}[level],
            'width_mm': 100, 'height_mm': 150 if pallet else 60, 'dpi': 300,
            'aggregation_min':1,'aggregation_max':{'BOX':50,'CARTON':12,'PALLET':16}[level],'print_mode':'MANUAL',
-           'child_product':None,
+           'child_product':None,'printer_kind':'LABEL','printer_host':'','printer_port':9100,
            'data': {'serial': '189912345678901234' if pallet else '18991234567890',
                     'gtin': '18991234567890', 'nie': '', 'product_name': 'AGREGASI PRODUCT SAMPLE',
                     'batch': 'BATCH-260501-A', 'mfg_date': '01/05/2025', 'exp_date': '01/05/2026',
@@ -120,6 +121,15 @@ def validate_document(document):
     if doc['aggregation_min']>doc['aggregation_max']:raise ValueError('Target minimum tidak boleh melebihi target maksimum.')
     doc.setdefault('print_mode','MANUAL');doc.setdefault('child_product',None)
     if doc['print_mode'] not in ('AUTO','MANUAL'):raise ValueError('Mode cetak harus AUTO atau MANUAL.')
+    doc.setdefault('printer_kind','LABEL');doc.setdefault('printer_host','');doc.setdefault('printer_port',9100)
+    if doc['printer_kind'] not in PRINTER_KINDS:raise ValueError('Jenis printer harus LABEL atau TIJ.')
+    if doc['printer_kind']=='TIJ' and doc['level']!='BOX':raise ValueError('Printer TIJ hanya untuk template agregasi tahap 1 (BOX).')
+    if not isinstance(doc['printer_host'],str) or len(doc['printer_host'])>200:raise ValueError('Alamat printer TIJ tidak valid.')
+    doc['printer_host']=doc['printer_host'].strip()
+    if isinstance(doc['printer_port'],bool) or not isinstance(doc['printer_port'],int) or not 1<=doc['printer_port']<=65535:
+        raise ValueError('Port printer TIJ harus 1-65535.')
+    if doc['printer_kind']=='TIJ' and not re.fullmatch(r'[A-Za-z0-9_.-]{1,200}',doc['printer_host']):
+        raise ValueError('Isi IP atau hostname printer TIJ, contoh 192.168.10.40.')
     product=doc['child_product']
     if product is not None:
         if not isinstance(product,dict) or not isinstance(product.get('id'),(str,int)) or isinstance(product.get('id'),bool) or not isinstance(product.get('name'),str) or not product['name'].strip():raise ValueError('Relasi produk child tidak valid.')

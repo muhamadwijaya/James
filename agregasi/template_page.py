@@ -182,6 +182,11 @@ class TemplatePage(PageBase):
         self.preview_dialog=PreviewDialog(self,doc,identifier);self.preview_dialog.exec()
     def print_document(self,document,identifier=None,printer=None,confirm=True,pdf_path=None):
         doc=check_renderable(document)
+        if doc.get('printer_kind')=='TIJ' and printer is None and not pdf_path:
+            runtime=getattr(self,'settings_runtime',None)
+            if runtime is None:raise ValueError('Koneksi printer TIJ belum siap pada sesi ini.')
+            runtime.print_tij(doc);self.repo.record(identifier,doc['level'],'PRINT JOB','TIJ '+doc['printer_host']+':'+str(doc['printer_port']))
+            self.schedule_refresh();self.active_editor.message('Tugas cetak dikirim ke printer TIJ.');return True
         if pdf_path:
             export_pdf(doc,pdf_path);self.repo.record(identifier,doc['level'],'CETAK PDF',Path(pdf_path).name);self.schedule_refresh();return True
         if printer is None:

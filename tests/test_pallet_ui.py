@@ -41,7 +41,7 @@ class PalletUiTests(unittest.TestCase):
         p.print_callback=lambda *args:False;p.buttons['stage_print_label'].click();self.assertEqual(p.run['print_state'],'ERROR')
         printed=[];p.print_callback=lambda doc,*args:printed.append(doc) or True;p.buttons['stage_print_label'].click();self.assertEqual(p.run['print_state'],'SENT');self.assertEqual(printed[0]['data']['quantity'],'2 CARTON')
         self.assertEqual(p.repo.revisions.get(('PALLET',p.run['parent_code']))['print_state'],'TERKIRIM KE PRINTER')
-        with patch.object(p.settings_runtime,'conveyor') as conveyor:p.buttons['stage_conveyor'].click();conveyor.assert_called_once()
+        self.assertNotIn('stage_conveyor',p.buttons)
     def test_target_dialog_and_verified_label_use_saved_data(self):
         p=self.page
         def targets():

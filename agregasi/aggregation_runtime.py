@@ -72,7 +72,9 @@ class AggregationRuntime:
     def _finish(self,run,quantity):
         doc=run['document']
         code=run['parent_code'] or self._next_code(doc)
-        state='PENDING' if quantity==doc['aggregation_max'] and doc['print_mode']=='AUTO' else 'WAITING'
+        # Reaching the template maximum always queues the label automatically;
+        # print_mode only decides an early lock below the maximum.
+        state='PENDING' if quantity==doc['aggregation_max'] else 'WAITING'
         self.store.db.execute('INSERT INTO packages(stage,code,batch) VALUES(?,?,?)',(run['level'],code,run['batch']))
         self.store.db.execute('INSERT INTO events(ts,stage,action,code,status,note,batch,product,operator,source) VALUES(?,?,?,?,?,?,?,?,?,?)',(datetime.now().isoformat(timespec='seconds'),run['level'],'Agregasi '+run['level'],code,'VALID',doc['name'],run['batch'],doc['data'].get('product_name',''),self.store.get('user'),'template'))
         current=self.store.get('current');current[run['level']]=code;self.store.put('current',current)

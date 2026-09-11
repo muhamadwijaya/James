@@ -1,3 +1,48 @@
+# Agregasi tahap 1, template print terkunci, dan printer TIJ — v3.12.0
+
+**Halaman Tahap 1 / BOX kini terbagi dua.** Separuh kiri tetap grid unit 50 sel
+(lima kolom, sepuluh baris). Separuh kanan menampilkan **template print yang
+dikunci** — label persis seperti yang akan dicetak, lengkap dengan kode box,
+ukuran canvas, DPI, jenis printer, dan penanda cetak otomatis saat maksimum.
+
+**Di bawah template print** tampil **data master box yang menunggu verifikasi**
+(kode box, produk, batch/MFD, isi box, status cetak dan verifikasi) selama
+scanner gun dipakai. Bila scanner tahap 1 memakai kamera, area yang sama berubah
+menjadi **tampilan kamera** beserta status koneksinya.
+
+**Pengaturan → Scanner** memiliki **MODE SCAN** untuk setiap scanner tahap:
+`SCANNER GUN` (port COM atau keyboard seperti sebelumnya) atau `KAMERA IP`
+dengan **IP KAMERA** dan **PORT KAMERA** yang dapat diisi. Mode kamera mengambil
+snapshot HTTP berkala, menampilkannya pada halaman Box, lalu mengirim barcode
+yang terbaca ke kolom scan. Frame kosong atau gambar yang gagal dibaca tidak
+pernah dilaporkan sebagai hasil scan; statusnya ditulis apa adanya.
+
+**Urutan pemilihan data dibalik.** Template dipilih paling awal dan daftarnya
+hanya berisi master template yang **tersimpan dan aktif**. Produk tidak dipilih
+manual lagi: nilainya mengikuti relasi child pada template dan hanya ditampilkan.
+Setelah batch dan list data ditentukan, tombol **KUNCI DATA / BUKA KUNCI DATA**
+mengunci pilihan tersebut dan menyiapkan sesi agregasi. Scanner kemudian
+memverifikasi otomatis setiap unit yang sesuai template dan list data terkunci;
+data hanya dapat dibuka kembali selama box belum berisi unit.
+
+**Tombol START CONVEYOR dihapus** dari Tahap 1, 2, dan 3. Pada halaman Box
+tempatnya diisi **KUNCI BOX** untuk mengunci box sebelum target maksimum.
+
+**Progres agregasi menampilkan target maksimum template yang dikunci**
+(`MAX TEMPLATE n`). Saat jumlah maksimum tercapai, label agregasi **dicetak
+otomatis**, termasuk untuk template bermode Manual print. Pilihan Auto/Manual
+pada template sekarang mengatur pencetakan ketika box dikunci sebelum maksimum.
+
+**Master Template**: ukuran canvas (**Lebar** dan **Tinggi**) serta **DPI CETAK**
+diatur langsung pada form template BOX, CARTON, dan PALLET. Khusus template BOX
+(agregasi tahap 1) tersedia **JENIS PRINTER**: `Printer label` atau
+`TIJ / thermal`. Bila TIJ dipilih, **KONEKSI TIJ** meminta IP dan port print head
+thermal, dan label agregasi dikirim langsung ke alamat tersebut. Dokumen template
+menyimpan jenis printer beserta alamatnya, sehingga pilihan ini ikut berpindah
+saat template diekspor atau diimpor.
+
+---
+
 # Tata letak seragam v3.11.2
 
 Ukuran dan posisi tulisan **AGREGASI**, subjudul, serta informasi Line / Shift /

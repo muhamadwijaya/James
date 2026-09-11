@@ -9,9 +9,25 @@ import json
 import re
 import sqlite3
 
-VERSION = '3.11.2'
+VERSION = '3.12.0'
 LEVELS = ('BOX', 'CARTON', 'PALLET')
 ROLES = ('ADMIN', 'OPERATOR', 'QC', 'MAINTENANCE')
+SCAN_MODES = ('SCANNER GUN', 'KAMERA IP')
+
+
+def scanner_camera_url(profile):
+    """HTTP snapshot URL of a scanner profile that reads barcodes with a camera."""
+    raw = str(profile.get('camera_ip', '')).strip()
+    if not raw:
+        raise ValueError('Isi alamat IP kamera scanner pada Pengaturan.')
+    target = urlparse(raw if '://' in raw else 'http://' + raw)
+    if target.scheme not in ('http', 'https') or not target.hostname or target.username or target.password:
+        raise ValueError('Alamat kamera scanner: http://IP atau IP saja; port diisi terpisah.')
+    port = profile.get('camera_port')
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError('Port kamera scanner harus 1-65535.')
+    path = target.path if target.path not in ('', '/') else '/snapshot.jpg'
+    return f'{target.scheme}://{target.hostname}:{port}{path}' + (('?' + target.query) if target.query else '')
 
 
 def defaults():
@@ -29,8 +45,10 @@ def defaults():
                          ('BOX', 'ZEBRA ZD421', 203, 15, 5, '60 x 40 mm'),
                          ('CARTON', 'ZEBRA ZT231', 203, 15, 6, '100 x 60 mm'),
                          ('PALLET', 'ZEBRA ZT411', 300, 18, 6, '100 x 150 mm')]},
-        'scanners': {level: {'device': 'USB-SCANNER-0'+str(i), 'port': 'COM'+str(i+2),
-                     'baud': 9600, 'trigger': 'AUTO', 'autofocus': True,
+        'scanners': {level: {'device': 'USB-SCANNER-0'+str(i), 'mode': 'SCANNER GUN',
+                     'port': 'COM'+str(i+2), 'baud': 9600,
+                     'camera_ip': '192.168.10.3'+str(i), 'camera_port': 8080,
+                     'trigger': 'AUTO', 'autofocus': True,
                      'exposure': 120, 'resolution': '1280 x 720'}
                      for i, level in enumerate(('BOX', 'CARTON'), 1)},
         'camera': {'device': 'CAM-PTZ-01', 'address': '192.168.10.30',
@@ -123,8 +141,15 @@ def validate(raw):
             raise ValueError('Autofocus harus aktif/nonaktif.')
     for obj in cfg['scanners'].values():
         choice(obj, 'baud', (9600, 19200, 38400, 57600, 115200))
+        choice(obj, 'mode', SCAN_MODES)
         if not isinstance(obj['port'], str) or not obj['port'].strip():
             raise ValueError('Port scanner wajib diisi.')
+        if not isinstance(obj['camera_ip'], str) or len(obj['camera_ip']) > 200:
+            raise ValueError('Alamat IP kamera scanner tidak valid.')
+        number(obj, 'camera_port', 1, 65535)
+        # A camera scanner must be reachable before the line depends on it.
+        if obj['mode'] == 'KAMERA IP':
+            scanner_camera_url(obj)
     if not isinstance(cfg['camera']['address'], str):
         raise ValueError('Alamat kamera tidak valid.')
     return cfg

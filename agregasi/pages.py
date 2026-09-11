@@ -187,7 +187,6 @@ class OperationPage(PageBase):
         self.hotspot('stage_start_scan',140,894,145,44,'Mulai scan '+cfg['child'].lower())
         self.hotspot('stage_print_label',297,894,153,44,'Cetak label')
         self.hotspot('stage_reset',461,894,153,44,'Reset '+stage.lower())
-        self.hotspot('stage_conveyor',623,894,155,44,'Jalankan conveyor simulasi')
         self.hotspot('stage_upload',915,894,165,48,'Upload instan')
         self.scan_input.returnPressed.connect(self.scan)
         self.action.connect(self.local_action)
@@ -263,10 +262,6 @@ class OperationPage(PageBase):
             self.update()
         elif name == 'stage_print_label': self.message='Label '+self.stage.lower()+' dikirim ke printer simulasi.'; self.update()
         elif name == 'stage_reset': self.filled=0; self.message='Tahap di-reset pada tampilan sesi ini; riwayat tidak dihapus.'; self.update()
-        elif name == 'stage_conveyor':
-            if hasattr(self,'settings_runtime'):self.settings_runtime.conveyor();self.message='Lihat hasil perintah controller pada Pengaturan.'
-            else:self.message='Controller conveyor belum dikonfigurasi.'
-            self.update()
         elif name == 'stage_upload':
             if hasattr(self,'settings_runtime'):self.settings_runtime.upload(level=self.stage);self.message='Pengiriman diproses melalui koneksi di Pengaturan.'
             else:self.message='Koneksi API belum dikonfigurasi.'
@@ -336,7 +331,7 @@ class OperationPage(PageBase):
         self.panel(727,687,368,195,'HASIL AGREGASI '+self.stage); self.text(743,727,80,18,'WAKTU',9,MUTED); self.text(844,727,150,18,'KODE '+self.stage,9,MUTED); self.text(1031,727,50,18,'STATUS',9,MUTED)
         for i,e in enumerate([dict(row) for row in self.store.db.execute("SELECT * FROM events WHERE stage=? AND source='template' ORDER BY id DESC LIMIT 5",(self.stage,))] if getattr(self,'run',None) else self.store.events(self.stage,limit=5)):
             yy=746+i*24; self.text(743,yy,80,20,e['ts'][11:19],10); self.text(844,yy,180,20,e['code'],10); self.rect(1025,yy+2,54,18,'#15683c','#0c3b28','#37a950',4); self.text(1025,yy+2,54,18,'SELESAI',8,WHITE,True,Qt.AlignmentFlag.AlignCenter)
-        self.panel(15,893,1080,97); self.text(30,907,100,22,'KONTROL LINE',11); self.rect(140,895,145,44,'#08743d','#003f2b','#39a853',4); self.text(140,903,145,28,self.cfg['action'],11,WHITE,True,Qt.AlignmentFlag.AlignCenter); self.rect(297,895,153,44,'#0678bd','#003c69','#2aa2ed',4); self.text(297,903,153,28,'PRINT LABEL',11,WHITE,True,Qt.AlignmentFlag.AlignCenter); self.rect(461,895,153,44,'#9e7104','#604200','#d8a71a',4); self.text(461,903,153,28,'RESET '+self.stage,11,WHITE,True,Qt.AlignmentFlag.AlignCenter); self.rect(623,895,155,44,'#0870b7','#00395f','#2494da',4); self.text(623,903,155,28,'START CONVEYOR',11,WHITE,True,Qt.AlignmentFlag.AlignCenter); self.text(790,906,115,22,'MODE: AGGREGATION',10,GREEN,True); self.rect(915,895,165,44,'#65449c','#322262','#8868c7',4); self.text(915,903,165,28,'UPLOAD INSTAN',11,WHITE,True,Qt.AlignmentFlag.AlignCenter); self.text(31,948,90,22,'MFD',11); self.text(362,946,716,34,self.message,10,GREEN if self.message.startswith(('VALID','Siap')) else YELLOW)
+        self.panel(15,893,1080,97); self.text(30,907,100,22,'KONTROL LINE',11); self.rect(140,895,145,44,'#08743d','#003f2b','#39a853',4); self.text(140,903,145,28,self.cfg['action'],11,WHITE,True,Qt.AlignmentFlag.AlignCenter); self.rect(297,895,153,44,'#0678bd','#003c69','#2aa2ed',4); self.text(297,903,153,28,'PRINT LABEL',11,WHITE,True,Qt.AlignmentFlag.AlignCenter); self.rect(461,895,153,44,'#9e7104','#604200','#d8a71a',4); self.text(461,903,153,28,'RESET '+self.stage,11,WHITE,True,Qt.AlignmentFlag.AlignCenter); self.text(790,906,115,22,'MODE: AGGREGATION',10,GREEN,True); self.rect(915,895,165,44,'#65449c','#322262','#8868c7',4); self.text(915,903,165,28,'UPLOAD INSTAN',11,WHITE,True,Qt.AlignmentFlag.AlignCenter); self.text(31,948,90,22,'MFD',11); self.text(362,946,716,34,self.message,10,GREEN if self.message.startswith(('VALID','Siap')) else YELLOW)
 
 
 def __getattr__(name):

@@ -29,7 +29,7 @@ class CartonPage(OperationPage):
         self.scan_table=self.table(370,723,338,147,['WAKTU','KODE BOX','STATUS'],[67,188,75]);self.scan_table.verticalHeader().setDefaultSectionSize(23);self.scan_table.horizontalHeader().setFixedHeight(25)
         self.result_table=self.table(740,723,341,147,['WAKTU','KODE CARTON','STATUS'],[66,186,80]);self.result_table.verticalHeader().setDefaultSectionSize(23);self.result_table.horizontalHeader().setFixedHeight(25)
         self.scan_table.cellDoubleClicked.connect(self.scan_detail);self.result_table.cellDoubleClicked.connect(self.result_detail)
-        for spec in [('stage_start_scan',139,899,146,43,'START SCAN BOX','play','green'),('stage_print_label',297,899,153,43,'PRINT LABEL','printer','blue'),('stage_reset',462,899,143,43,'RESET CARTON','sync','gold'),('stage_conveyor',617,899,161,43,'START CONVEYOR','conveyor','blue'),('stage_upload',923,899,158,43,'UPLOAD INSTAN','upload','blue')]:self.button(*spec)
+        for spec in [('stage_start_scan',139,899,146,43,'START SCAN BOX','play','green'),('stage_print_label',297,899,153,43,'PRINT LABEL','printer','blue'),('stage_reset',462,899,143,43,'RESET CARTON','sync','gold'),('stage_upload',923,899,158,43,'UPLOAD INSTAN','upload','blue')]:self.button(*spec)
         upload=self.buttons['stage_upload'];upload.setStyleSheet(upload.styleSheet().replace('#076fac','#7844a9').replace('#03426b','#442565').replace('#249bd2','#a678ce'))
         self.mfd=QDateEdit(QDate.currentDate(),self);self.mfd.setDisplayFormat('dd/MM/yyyy');self.mfd.setCalendarPopup(True);self.mfd.setGeometry(65,951,124,29);self.mfd.setStyleSheet('QDateEdit {color:#edf5ff;background:#04283f;border:1px solid #3f6780;padding:3px;}')
         self.scan_input=self.field(240,951,225,29,'','Scan serial box / Enter');self.scan_input.setMaxLength(500);self.scan_input.setObjectName('carton_scan_input');self.scan_input.returnPressed.connect(self.scan)
@@ -94,7 +94,6 @@ class CartonPage(OperationPage):
                 for j,value in enumerate(values):
                     item=QTableWidgetItem(str(value));item.setToolTip(str(value));table.setItem(i,j,item)
                     if j==2:item.setForeground(QColor(GREEN if status in ('VALID','SELESAI') else BLUE if status=='AKTIF' else YELLOW if status=='DUPLIKAT' else RED))
-        self.buttons['stage_conveyor'].setText('STOP CONVEYOR' if self.settings_runtime.conveyor_running else 'START CONVEYOR')
         self.update()
 
     def start_template(self,*_):
@@ -177,7 +176,6 @@ class CartonPage(OperationPage):
             for widget in (self.product,self.batch,self.target_list,self.template_selector,self.mfd):widget.setEnabled(True)
             with self.store.db:self.store.put('carton_current_run',None)
             self.refresh_choices();self.template_selector.blockSignals(True);self.template_selector.setCurrentIndex(0);self.template_selector.blockSignals(False);self.notify("Pilih target dan template untuk membuka carton berikutnya.");self.refresh()
-        elif name=='stage_conveyor':self.settings_runtime.conveyor()
         elif name=='stage_upload':self.settings_runtime.upload(level='CARTON')
         elif name=='carton_targets':self.show_targets()
         elif name=='carton_verify':self.verify_dialog(self.run)

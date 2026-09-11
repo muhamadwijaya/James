@@ -142,7 +142,11 @@ class MainWindow(QMainWindow):
     def print_aggregation_label(self,document,identifier,automatic=False):
         from copy import deepcopy
         cfg=self.settings_runtime.repo.load()['printers'][document['level']]
-        doc=deepcopy(document);doc['dpi']=cfg['dpi']
+        doc=deepcopy(document)
+        # A TIJ head is addressed by the master template itself, not by the OS driver.
+        if doc.get('printer_kind')=='TIJ':
+            return self.settings_runtime.print_tij(doc)
+        doc['dpi']=cfg['dpi']
         width,height=map(float,cfg['label'].removesuffix(' mm').split(' x '))
         if doc['width_mm']>width or doc['height_mm']>height:
             raise ValueError('Ukuran template melebihi label printer yang dipilih. Sesuaikan ukuran label pada Pengaturan.')

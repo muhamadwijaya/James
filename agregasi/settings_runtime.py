@@ -14,13 +14,14 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkRe
 from PySide6.QtPrintSupport import QPrinter, QPrinterInfo
 from PySide6.QtSerialPort import QSerialPortInfo, QSerialPort
 
-from .settings_model import SettingsRepository, LEVELS, VERSION
+from .settings_model import SettingsRepository, LEVELS, VERSION, scanner_camera_url
 
 
 class SettingsRuntime(QObject):
     changed = Signal()
     message = Signal(str)
     camera_image = Signal(QImage)
+    camera_frame = Signal(str,QImage)
     scan_received = Signal(str,str)
 
     def __init__(self, store, parent=None):
@@ -32,6 +33,7 @@ class SettingsRuntime(QObject):
         self.manager = QNetworkAccessManager(self)
         self.replies = set(); self.sockets = set(); self.stopped = False
         self.scanner_ports={};self.scanner_buffers={};self.scanner_armed={}
+        self.scanner_cameras={};self.scanner_camera_codes={};self.scanner_camera_busy={}
         self.uploading = False; self.paused = False; self.conveyor_running = False
         with self.store.db:
             self.store.db.execute("UPDATE delivery_ledger SET status='FAILED',detail='Sesi sebelumnya berakhir sebelum konfirmasi server.' WHERE status='SENDING'")
@@ -50,7 +52,7 @@ class SettingsRuntime(QObject):
             with self.store.db:
                 devices=self.store.get('devices',{})
                 if group in ('printer','scanner'):
-                    devices[group]=any(v['status'] in ('ONLINE','DRIVER SIAP','TERDETEKSI','TERKIRIM','PORT TERJANGKAU') for k,v in self.status.items() if k.startswith(group+'_'))
+                    devices[group]=any(v['status'] in ('ONLINE','DRIVER SIAP','TERDETEKSI','TERKIRIM','PORT TERJANGKAU','KAMERA ONLINE') for k,v in self.status.items() if k.startswith(group+'_'))
                 else:devices[group]=value in ('ONLINE','BERJALAN')
                 self.store.put('devices',devices)
         self.changed.emit()
@@ -58,6 +60,7 @@ class SettingsRuntime(QObject):
     def apply(self):
         for serial in self.scanner_ports.values():serial.close();serial.deleteLater()
         self.scanner_ports.clear();self.scanner_buffers.clear()
+        for level in list(self.scanner_cameras):self.stop_scanner_camera(level)
         self.auto_timer.setInterval(self.repo.load()['sync_interval'] * 1000)
         self.auto_timer.start()
         self.status.clear()
@@ -75,7 +78,14 @@ class SettingsRuntime(QObject):
             state = 'DRIVER SIAP' if ready else 'PERIKSA DRIVER' if info else 'BELUM DITES' if device.startswith('tcp://') else 'TIDAK TERDETEKSI'
             self.set_status('printer_'+level, state, device)
         for level in ('BOX','CARTON'):
-            port = cfg['scanners'][level]['port']
+            profile = cfg['scanners'][level]
+            if profile.get('mode') == 'KAMERA IP':
+                try:
+                    self.set_status('scanner_'+level, 'KAMERA DIATUR', scanner_camera_url(profile))
+                except ValueError as exc:
+                    self.set_status('scanner_'+level, 'PERIKSA ALAMAT', str(exc))
+                continue
+            port = profile['port']
             self.set_status('scanner_'+level, 'TERDETEKSI' if port in ports else 'MODE KEYBOARD' if port == 'KEYBOARD' else 'TIDAK TERDETEKSI', port)
         if 'camera' not in self.status:
             self.set_status('camera', 'BELUM DITES')
@@ -84,7 +94,7 @@ class SettingsRuntime(QObject):
         with self.store.db:
             devices = self.store.get('devices', {})
             devices.update(database=True, printer=any(self.status['printer_'+x]['status']=='DRIVER SIAP' for x in LEVELS),
-                           scanner=any(self.status['scanner_'+x]['status']=='TERDETEKSI' for x in ('BOX','CARTON')),
+                           scanner=any(self.status['scanner_'+x]['status'] in ('TERDETEKSI','KAMERA DIATUR','KAMERA ONLINE') for x in ('BOX','CARTON')),
                            camera=self.status['camera']['status']=='ONLINE', conveyor=self.conveyor_running)
             self.store.put('devices', devices)
 
@@ -216,6 +226,8 @@ class SettingsRuntime(QObject):
         if not cfg['line_active']:raise ValueError('Line nonaktif. Aktifkan melalui Pengaturan.')
         if level not in cfg['scanners']:return 'Masukkan barcode pallet pada kolom scan.'
         profile=cfg['scanners'][level];self.scanner_armed[level]=True
+        if profile.get('mode')=='KAMERA IP':return self.listen_scanner_camera(level)
+        self.stop_scanner_camera(level)
         if profile['port']=='KEYBOARD':return 'Scanner keyboard siap. Fokuskan kolom scan dan pindai barcode.'
         if level in self.scanner_ports and self.scanner_ports[level].isOpen():return 'Scanner siap menerima barcode.'
         for other,serial in self.scanner_ports.items():
@@ -240,6 +252,56 @@ class SettingsRuntime(QObject):
                 self.set_status('scanner_'+level,'TERPUTUS',serial.errorString());serial.close()
         serial.errorOccurred.connect(failed);self.set_status('scanner_'+level,'MENUNGGU SCAN',profile['port'])
         return 'Port scanner terbuka. Pindai barcode dengan terminator Enter/CR/LF.'
+
+    def scanner_camera_url(self,level):
+        """Snapshot URL of the camera acting as the scanner for this stage."""
+        return scanner_camera_url(self.repo.load()['scanners'][level])
+
+    def listen_scanner_camera(self,level):
+        url=self.scanner_camera_url(level)
+        timer=self.scanner_cameras.get(level)
+        if timer is None:
+            timer=QTimer(self);timer.setInterval(1500)
+            timer.timeout.connect(lambda key=level:self.poll_scanner_camera(key));self.scanner_cameras[level]=timer
+        timer.start();self.set_status('scanner_'+level,'KAMERA MENUNGGU',url)
+        self.poll_scanner_camera(level)
+        return 'Kamera scanner '+url+' aktif. Arahkan barcode unit ke kamera.'
+
+    def stop_scanner_camera(self,level):
+        timer=self.scanner_cameras.get(level)
+        if timer is not None:timer.stop()
+        self.scanner_camera_codes.pop(level,None);self.scanner_camera_busy.pop(level,None)
+
+    def poll_scanner_camera(self,level):
+        """Fetch one frame and forward a single decoded barcode to the stage page."""
+        if self.stopped or self.scanner_camera_busy.get(level):return
+        try:url=self.scanner_camera_url(level)
+        except ValueError as exc:
+            self.stop_scanner_camera(level);self.set_status('scanner_'+level,'PERIKSA ALAMAT',str(exc));self.message.emit(str(exc));return
+        self.scanner_camera_busy[level]=True
+        def result(code,body,error):
+            self.scanner_camera_busy.pop(level,None)
+            image=QImage.fromData(body)
+            if not 200<=code<300 or error or image.isNull():
+                self.set_status('scanner_'+level,'GAGAL',error or f'HTTP {code}: kamera belum mengirim gambar.');return
+            self.camera_frame.emit(level,image)
+            self.set_status('scanner_'+level,'KAMERA ONLINE',url)
+            try:
+                from .pallet_camera import decode_frame
+                codes=decode_frame(image)
+            except Exception as exc:
+                self.set_status('scanner_'+level,'DEKODER TIDAK SIAP',str(exc));return
+            if len(codes)>1:
+                self.message.emit('Beberapa barcode terlihat kamera '+level+'. Arahkan satu unit saja.');return
+            if not codes:
+                self.scanner_camera_codes.pop(level,None);return
+            value=codes[0]
+            # One frame per code: the camera keeps seeing the same unit until it moves.
+            if value==self.scanner_camera_codes.get(level):return
+            self.scanner_camera_codes[level]=value
+            if self.repo.load()['scanners'][level]['trigger']=='AUTO' or self.scanner_armed.get(level):
+                self.scanner_armed[level]=False;self.scan_received.emit(level,value)
+        self.request(url,result,timeout=5)
 
     def upload(self, retry=False, level=None, event_ids=None):
         if self.stopped:return
@@ -395,25 +457,45 @@ class SettingsRuntime(QObject):
 
     def print_zpl(self,document):
         """Raster ZPL honors DPI/darkness/speed; successful send is not a print confirmation."""
-        from .label_render import render_image
         profile=self.repo.load()['printers'][document['level']]
         target=urlparse(profile['device'])
         doc=deepcopy(document); doc['dpi']=profile['dpi']
-        image=render_image(doc,profile['dpi']).convertToFormat(QImage.Format.Format_Grayscale8)
+        self.send_raster(doc,target.hostname,target.port,profile['dpi'],profile['darkness'],profile['speed'])
+        self.set_status('printer_'+document['level'],'TERKIRIM','Tugas ZPL dikirim; keluaran fisik perlu diperiksa.')
+        return True
+
+    def print_tij(self,document):
+        """Send a BOX label to the TIJ/thermal head configured on its master template."""
+        host=str(document.get('printer_host','')).strip();port=document.get('printer_port')
+        if not host or isinstance(port,bool) or not isinstance(port,int):
+            raise ValueError('Isi IP dan port printer TIJ pada master template.')
+        profile=self.repo.load()['printers'][document['level']]
+        doc=deepcopy(document)
+        self.send_raster(doc,host,port,int(doc.get('dpi',profile['dpi'])),profile['darkness'],profile['speed'])
+        self.set_status('printer_'+document['level'],'TERKIRIM',f'Tugas TIJ dikirim ke {host}:{port}; keluaran fisik perlu diperiksa.')
+        return True
+
+    def send_raster(self,document,host,port,dpi,darkness,speed):
+        """Raster the label once and stream it to a network print head."""
+        from .label_render import render_image
+        if not host or isinstance(port,bool) or not isinstance(port,int) or not 1<=port<=65535:
+            raise ValueError('Alamat printer jaringan tidak lengkap: isi IP dan port.')
+        doc=deepcopy(document); doc['dpi']=dpi
+        image=render_image(doc,dpi).convertToFormat(QImage.Format.Format_Grayscale8)
         width,height=image.width(),image.height(); stride=image.bytesPerLine(); source=bytes(image.constBits())
         row_bytes=(width+7)//8; packed=bytearray(row_bytes*height)
         for y in range(height):
             for x in range(width):
                 if source[y*stride+x]<128:packed[y*row_bytes+x//8]|=0x80>>(x%8)
-        command=(f'^XA^PW{width}^LL{height}^MD{profile["darkness"]}^PR{profile["speed"]}'
+        command=(f'^XA^PW{width}^LL{height}^MD{darkness}^PR{speed}'
                  f'^FO0,0^GFA,{len(packed)},{len(packed)},{row_bytes},'+packed.hex().upper()+'^FS^XZ').encode('ascii')
-        with socket.create_connection((target.hostname,target.port),timeout=3) as conn:
+        with socket.create_connection((host,port),timeout=3) as conn:
             conn.sendall(command)
-        self.set_status('printer_'+document['level'],'TERKIRIM','Tugas ZPL dikirim; keluaran fisik perlu diperiksa.')
         return True
 
     def shutdown(self):
         self.stopped=True; self.auto_timer.stop(); self.backup_timer.stop()
+        for level in list(self.scanner_cameras):self.stop_scanner_camera(level)
         for serial in self.scanner_ports.values():serial.close()
         for reply in list(self.replies):reply.abort()
         for conn in list(self.sockets):conn.abort()
