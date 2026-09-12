@@ -22,8 +22,8 @@ class BoxUiTests(unittest.TestCase):
         self.page.template_selector.setCurrentIndex(1);self.assertIsNone(self.page.run)
         self.page.local_action('stage_lock');self.assertIsNotNone(self.page.run)
     def use_camera(self,port=8099):
-        cfg=self.window.settings_runtime.repo.load();cfg['scanners']['BOX'].update(mode='KAMERA IP',camera_ip='127.0.0.1',camera_port=port)
-        self.window.settings_runtime.repo.save(cfg);self.page.refresh()
+        p=self.page;p.camera_ip_input.setText('127.0.0.1');p.camera_port_input.setValue(port)
+        p.scan_mode_select.setCurrentText('KAMERA IP');p.local_action('stage_camera_apply')
     def test_empty_screen_pause_reset_and_resume_controls(self):
         p=self.page;self.assertEqual(p.filled,0);self.assertEqual(len(p.cell_buttons),25);self.start()
         p.scan_input.setText('UNIT-1');p.scan();self.assertEqual(p.filled,1)
@@ -73,14 +73,24 @@ class BoxUiTests(unittest.TestCase):
         self.assertIn('MENUNGGU VERIFIKASI',rows['STATUS']);self.assertTrue(p.buttons['stage_verify'].isVisibleTo(p))
         p.grab()
     def test_camera_scanner_mode_shows_the_live_view_instead_of_master_data(self):
-        p=self.page;self.start();self.use_camera()
+        p=self.page;self.start()
+        # The stage page itself chooses the scan source and stores it in settings.
+        self.assertEqual(p.scan_mode_select.currentText(),'SCANNER GUN')
+        self.use_camera()
+        profile=self.window.settings_runtime.repo.load()['scanners']['BOX']
+        self.assertEqual((profile['mode'],profile['camera_ip'],profile['camera_port']),('KAMERA IP','127.0.0.1',8099))
+        self.assertTrue(p.camera_ip_input.isVisibleTo(p));self.assertTrue(p.buttons['stage_camera_apply'].isVisibleTo(p))
         self.assertTrue(p.camera_view.isVisibleTo(p));self.assertFalse(p.buttons['stage_verify'].isVisibleTo(p))
         frame=QImage(80,60,QImage.Format.Format_RGB32);frame.fill(0xFFFFFF)
         p.show_camera_frame('CARTON',frame);self.assertTrue(p.camera_view.pixmap().isNull())
         p.show_camera_frame('BOX',frame);self.assertFalse(p.camera_view.pixmap().isNull())
         p.grab()
-        cfg=self.window.settings_runtime.repo.load();cfg['scanners']['BOX']['mode']='SCANNER GUN';self.window.settings_runtime.repo.save(cfg)
-        p.refresh();self.assertFalse(p.camera_view.isVisibleTo(p));self.assertTrue(p.buttons['stage_verify'].isVisibleTo(p))
+        p.scan_mode_select.setCurrentText('SCANNER GUN')
+        self.assertEqual(self.window.settings_runtime.repo.load()['scanners']['BOX']['mode'],'SCANNER GUN')
+        self.assertFalse(p.camera_view.isVisibleTo(p));self.assertTrue(p.buttons['stage_verify'].isVisibleTo(p))
+        self.assertFalse(p.camera_ip_input.isVisibleTo(p))
+        # The settings page mirrors the choice made on the stage page.
+        self.assertEqual(self.window.pages['settings'].controls['scanners.BOX.mode'].currentText(),'SCANNER GUN')
     def test_maximum_target_prints_the_label_automatically(self):
         repo=self.window.pages['template'].repo;identifier=repo.list('BOX')[0]['id'];doc=repo.get(identifier)['document']
         doc.update(aggregation_min=1,aggregation_max=2,print_mode='MANUAL');repo.save(doc,identifier)

@@ -10,6 +10,7 @@ from .upload_page import SendPage
 from .box_model import BoxRepository
 from .dashboard import WHITE,MUTED,GREEN,RED,YELLOW,BLUE
 from .label_render import render_image
+from .settings_model import SCAN_MODES
 from .ui_dialogs import AppDialog,FileDialog,MessageBox
 
 GRID=dict(x=23,y=234,w=98,h=74,gap_x=5,gap_y=7,cols=5,rows=5)
@@ -27,7 +28,7 @@ class BoxPage(OperationPage):
         PageBase.__init__(self,store,'box','Agregasi Box','PEMINDAHAN & VERIFIKASI UNIT PRODUK','BOX')
         self.stage='BOX';self.cfg=dict(self.CONFIG['BOX']);self.filled=0;self.run=None;self.repo=None;self.scanning=False
         self.child_codes=[];self.recent_children=[];self.result_rows=[];self.message='Pilih template aktif, batch dan list data lalu kunci data.';self.buttons={};self.verification_dialog=None
-        self._preview_key=None;self._preview_image=None;self._preview_error=''
+        self._preview_key=None;self._preview_image=None;self._preview_error='';self._scanner_synced=None
         self.template_selector=self.combo(99,720,235,24,[]);self.template_selector.setObjectName('box_template')
         self.product=self.field(99,749,235,24,'','Produk mengikuti template');self.product.setObjectName('box_product');self.product.setReadOnly(True)
         self.product.setStyleSheet(self.product.styleSheet()+' QLineEdit {color:#bcd8ec;background:#03202f;}')
@@ -40,9 +41,17 @@ class BoxPage(OperationPage):
         self.scan_table.cellDoubleClicked.connect(self.scan_detail);self.result_table.cellDoubleClicked.connect(self.result_detail)
         for spec in [('stage_start_scan',139,899,146,43,'START SCAN','play','green'),('stage_print_label',297,899,153,43,'PRINT LABEL','printer','blue'),('stage_reset',462,899,143,43,'RESET BOX','sync','gold'),('stage_close_box',617,899,161,43,'KUNCI BOX','lock','blue'),('stage_upload',923,899,158,43,'UPLOAD INSTAN','upload','blue')]:self.button(*spec)
         self.button('stage_verify',903,594,180,28,'VERIFIKASI BOX','check_circle','green')
-        self.camera_view=QLabel('Menunggu gambar kamera scanner…',self);self.camera_view.setGeometry(577,489,506,114)
+        self.scan_mode_select=self.combo(935,463,148,23,list(SCAN_MODES));self.scan_mode_select.setObjectName('box_scan_mode')
+        self.scan_mode_select.setToolTip('Sumber scan tahap 1: scanner gun (port COM/keyboard) atau kamera IP.')
+        self.scan_mode_select.currentTextChanged.connect(self.change_scan_mode)
+        self.camera_view=QLabel('Menunggu gambar kamera scanner…',self);self.camera_view.setGeometry(577,489,506,86)
         self.camera_view.setAlignment(Qt.AlignmentFlag.AlignCenter);self.camera_view.setWordWrap(True)
         self.camera_view.setStyleSheet('QLabel {color:#bcd8ec;background:#04202f;border:1px solid #2c5a75;border-radius:4px;font-size:11px;}');self.camera_view.hide()
+        self.camera_ip_input=self.field(607,580,190,23,'','IP kamera scanner');self.camera_ip_input.setObjectName('box_camera_ip')
+        self.camera_port_input=QSpinBox(self);self.camera_port_input.setGeometry(843,580,70,23);self.camera_port_input.setRange(1,65535)
+        self.camera_port_input.setStyleSheet('QSpinBox {color:#e9f5ff;background:#04283f;border:1px solid #3f6780;border-radius:4px;padding:1px 4px;font-size:12px;}')
+        self.button('stage_camera_apply',920,580,110,23,'SAMBUNG','camera')
+        for widget in (self.camera_ip_input,self.camera_port_input,self.buttons['stage_camera_apply']):widget.hide()
         self.mfd=QDateEdit(QDate.currentDate(),self);self.mfd.setDisplayFormat('dd/MM/yyyy');self.mfd.setCalendarPopup(True);self.mfd.setGeometry(65,951,124,29);self.mfd.setStyleSheet('QDateEdit {color:#edf5ff;background:#04283f;border:1px solid #3f6780;padding:3px;}')
         self.scan_input=self.field(240,951,225,29,'','Scan serial unit / Enter');self.scan_input.setMaxLength(500);self.scan_input.setObjectName('box_scan_input');self.scan_input.returnPressed.connect(self.scan)
         for i,name in enumerate(('box_targets','box_scan_step','box_print_step','box_verify')):self.hotspot(name,15+i*274,84,258,94)
@@ -163,6 +172,38 @@ class BoxPage(OperationPage):
     def apply_scan_mode(self):
         camera=self.scan_mode()=='KAMERA IP'
         self.camera_view.setVisible(camera);self.buttons['stage_verify'].setVisible(not camera)
+        for widget in (self.camera_ip_input,self.camera_port_input,self.buttons['stage_camera_apply']):widget.setVisible(camera)
+        self.sync_scan_mode()
+
+    def sync_scan_mode(self):
+        """Mirror the stage-1 scanner profile without discarding an address being typed."""
+        runtime=getattr(self,'settings_runtime',None)
+        if runtime is None:return
+        profile=runtime.repo.load()['scanners']['BOX']
+        self.scan_mode_select.blockSignals(True);self.scan_mode_select.setCurrentText(profile.get('mode','SCANNER GUN'));self.scan_mode_select.blockSignals(False)
+        address=(str(profile.get('camera_ip','')),int(profile.get('camera_port',8080)))
+        typed=(self.camera_ip_input.text(),self.camera_port_input.value())
+        if self._scanner_synced is None or typed==self._scanner_synced:
+            self.camera_ip_input.setText(address[0]);self.camera_ip_input.setCursorPosition(0);self.camera_port_input.setValue(address[1])
+        self._scanner_synced=address
+
+    def save_scanner_profile(self,**values):
+        runtime=self.settings_runtime;cfg=runtime.repo.load();cfg['scanners']['BOX'].update(values)
+        try:runtime.repo.save(cfg)
+        except ValueError as exc:self.notify(str(exc));self.sync_scan_mode();return False
+        runtime.apply()
+        if self.scanning:self.message=self.start_scanner()
+        self.refresh();return True
+
+    def change_scan_mode(self,value):
+        if not self.repo or value==self.scan_mode():return
+        if self.save_scanner_profile(mode=value):
+            self.notify('Mode scan tahap 1: '+value+('. Isi IP dan port kamera lalu tekan SAMBUNG.' if value=='KAMERA IP' else '. Scanner gun memakai port pada Pengaturan.'))
+
+    def apply_camera_address(self):
+        if not self.repo:return
+        if self.save_scanner_profile(mode='KAMERA IP',camera_ip=self.camera_ip_input.text().strip(),camera_port=self.camera_port_input.value()):
+            self.notify(self.message if self.scanning else 'Alamat kamera scanner tersimpan: '+self.settings_runtime.scanner_camera_url('BOX'))
 
     def start_scanner(self):
         try:return self.settings_runtime.listen_scanner('BOX')
@@ -262,6 +303,7 @@ class BoxPage(OperationPage):
             except ValueError as exc:self.notify(str(exc))
         elif name in ('stage_print_label','box_print_step'):self.print_run()
         elif name=='stage_reset':self.release_session('Pilih template dan list data untuk membuka box berikutnya.')
+        elif name=='stage_camera_apply':self.apply_camera_address()
         elif name=='stage_upload':self.settings_runtime.upload(level='BOX')
         elif name=='box_targets':self.show_targets()
         elif name in ('stage_verify','box_verify'):self.verify_dialog(self.pending_box() or self.run)
@@ -449,12 +491,12 @@ class BoxPage(OperationPage):
 
     def paint_master_data(self):
         camera=self.scan_mode()=='KAMERA IP'
+        self.panel(565,459,530,174,'KAMERA SCANNER' if camera else 'DATA MASTER BOX • MENUNGGU VERIFIKASI')
+        self.text(838,464,92,22,'MODE SCAN',9,MUTED,align=Qt.AlignmentFlag.AlignRight)
         if camera:
-            profile=self.settings_runtime.repo.load()['scanners']['BOX']
-            self.panel(565,459,530,174,'KAMERA SCANNER • '+str(profile.get('camera_ip',''))+':'+str(profile.get('camera_port','')))
             status=self.settings_runtime.status.get('scanner_BOX',{})
-            self.text(577,608,506,18,'STATUS KAMERA: '+status.get('status','BELUM DITES'),9,GREEN if status.get('status')=='KAMERA ONLINE' else MUTED);return
-        self.panel(565,459,530,174,'DATA MASTER BOX • MENUNGGU VERIFIKASI')
+            self.text(577,580,26,23,'IP',9,MUTED);self.text(803,580,36,23,'PORT',9,MUTED)
+            self.text(577,608,506,18,'STATUS KAMERA: '+status.get('status','BELUM DITES')+'  •  '+status.get('detail','')[:70],9,GREEN if status.get('status')=='KAMERA ONLINE' else MUTED);return
         run=self.pending_box()
         if not run:
             self.text(577,520,506,40,'Belum ada box menunggu verifikasi. Kunci box atau capai target maksimum untuk membuat data master.',10,MUTED,wrap=True,align=Qt.AlignmentFlag.AlignCenter);return

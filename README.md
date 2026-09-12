@@ -14,6 +14,12 @@ DPI, jenis printer, dan penanda cetak otomatis saat maksimum.
 scanner gun dipakai. Bila scanner tahap 1 memakai kamera, area yang sama berubah
 menjadi **tampilan kamera** beserta status koneksinya.
 
+**Pilihan scanner ada langsung di halaman Box.** Panel kanan bawah memuat
+**MODE SCAN** (`SCANNER GUN` / `KAMERA IP`); saat mode kamera dipilih, kolom
+**IP** dan **PORT** beserta tombol **SAMBUNG** muncul di panel yang sama. Pilihan
+ini disimpan ke profil scanner tahap 1, jadi halaman Pengaturan langsung ikut
+berubah, dan sebaliknya.
+
 **Pengaturan → Scanner** memiliki **MODE SCAN** untuk setiap scanner tahap:
 `SCANNER GUN` (port COM atau keyboard seperti sebelumnya) atau `KAMERA IP`
 dengan **IP KAMERA** dan **PORT KAMERA** yang dapat diisi. Mode kamera mengambil
