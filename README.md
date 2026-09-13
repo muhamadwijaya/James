@@ -14,6 +14,19 @@ DPI, jenis printer, dan penanda cetak otomatis saat maksimum.
 scanner gun dipakai. Bila scanner tahap 1 memakai kamera, area yang sama berubah
 menjadi **tampilan kamera** beserta status koneksinya.
 
+**Halaman Revision mengikuti tata letak acuan.** Kolom pencarian SERIAL UNIT,
+KODE BOX, KODE CARTON dan KODE PALLET memakai ikon barcode; baris kedua memuat
+BATCH, rentang **TANGGAL** (dua tanggal dengan tombol jam untuk menyalakan atau
+mematikan filter) dan STATUS di samping tombol **CARI DATA**. Tabel hasil
+menampilkan **chip level** (UNIT, BOX, CARTON, PALLET) serta tanda status
+bercentang, dengan navigasi halaman « ‹ 1 2 3 … › ». Panel **DETAIL DATA
+TERPILIH** menampilkan chip tipe data, kode, produk, batch, kapasitas beserta
+jumlah unit, relasi parent → data terpilih, status verifikasi dan cetak label,
+waktu scan terakhir, operator, catatan, serta tombol LIHAT SEMUA DETAIL.
+**RIWAYAT TRACEABILITY** menampilkan empat kartu UNIT → BOX → CARTON → PALLET
+lengkap dengan barcode, isi, batch, waktu dan operator, dan **LOG REVISION**
+memakai kolom DARI STATUS / KE STATUS dengan chip warna.
+
 **Tahap 3 / PALLET memakai pola yang sama.** Template pallet tersimpan dipilih
 lebih dulu, produk hanya ditampilkan, sedangkan **batch dan list carton dapat
 dipilih sesuai data hasil Tahap 2**: batch hanya berisi batch yang masih punya

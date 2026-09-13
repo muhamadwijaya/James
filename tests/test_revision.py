@@ -3,7 +3,7 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import json,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate,Qt
 from PySide6.QtWidgets import QApplication
 from agregasi.store import Store
 from agregasi.app import MainWindow
@@ -94,6 +94,24 @@ class RevisionTests(unittest.TestCase):
         p.box.setText('BOX-UI-005');p.buttons['revision_search'].click();self.assertEqual(len(p.rows),1);key=p.key
         with patch.object(p,'edit_dialog',return_value=('verifikasi QC',None,None)):p.buttons['rev_unlock'].click();p.buttons['rev_reject'].click()
         self.assertEqual(self.repo.get(key)['status'],'REJECT');self.assertEqual(p.item['status'],'REJECT')
+    def test_ui_chips_pagination_and_date_filter_follow_the_reference(self):
+        from agregasi.revision_page import COLORS
+        for i in range(21):self.package('BOX',f'BOX-CHIP-{i:03}')
+        self.window=MainWindow(self.store);p=self.window.pages['revision']
+        # Level and status cells carry the chip colours painted by the delegate.
+        self.assertEqual(p.grid.item(0,1).data(Qt.ItemDataRole.UserRole),COLORS['BOX'])
+        self.assertEqual(p.grid.item(0,4).data(Qt.ItemDataRole.UserRole),COLORS['VALID'])
+        self.assertEqual([p.logs_grid.horizontalHeaderItem(i).text() for i in (4,5)],['DARI STATUS','KE STATUS'])
+        total=len(p.rows);self.assertGreater(p.page_count,1)
+        p.buttons['last'].click();self.assertEqual(p.page_index,p.page_count-1)
+        p.buttons['first'].click();self.assertEqual(p.page_index,0)
+        # The clock button switches the date range filter that replaced the checkbox.
+        self.assertFalse(p.date_active)
+        p.date_start.setDate(QDate(2020,1,1));p.date_end.setDate(QDate(2020,1,2))
+        self.assertTrue(p.date_active);self.assertEqual(len(p.rows),0)
+        p.buttons['date_filter'].click()
+        self.assertFalse(p.date_active);self.assertEqual(len(p.rows),total)
+
     def test_record_survives_restart(self):
         key=self.package('BOX','BOX-PERSIST');self.repo.unlock(key,'verifikasi QC');self.repo.change_status(key,'PENDING','cek ulang label');other=Store(self.store.path)
         try:self.assertEqual(RevisionRepository(other).get(key)['status'],'PENDING')
