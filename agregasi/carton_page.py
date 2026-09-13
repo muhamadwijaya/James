@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor,QPen
 from PySide6.QtWidgets import QDateEdit,QTableWidgetItem,QPushButton,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QSpinBox
 from .pages import PageBase,OperationPage
 from .upload_page import SendPage
-from .carton_model import CartonRepository,product_key
+from .carton_model import CartonRepository
 from .dashboard import WHITE,MUTED,GREEN,RED,YELLOW,BLUE
 from .sidebar_layout import fixed_sidebar,SIDEBAR
 from .settings_model import VERSION
@@ -21,11 +21,13 @@ class CartonPage(OperationPage):
         PageBase.__init__(self,store,'carton','Agregasi Carton','PENYUSUNAN BOX KE CARTON','CARTON')
         self.stage='CARTON';self.cfg=dict(self.CONFIG['CARTON']);self.filled=0;self.run=None;self.repo=None;self.grid_page=0;self.scanning=False
         self.child_codes=[];self.recent_children=[];self.result_rows=[];self.message='Pilih produk, batch dan template untuk memulai carton.';self.buttons={};self.verification_dialog=None
-        self.product=self.combo(99,720,235,24,[]);self.product.setObjectName('carton_product')
-        self.batch=self.combo(99,749,235,24,[store.get('batch')]);self.batch.setEditable(True);self.batch.setObjectName('carton_batch')
-        self.target_list=self.combo(99,778,235,24,[]);self.target_list.setObjectName('carton_target_list')
-        self.template_selector=self.combo(99,807,235,24,[]);self.template_selector.setObjectName('carton_template')
-        self.button('stage_lock',28,838,306,29,'KUNCI CARTON','lock')
+        self.template_selector=self.combo(99,720,235,24,[]);self.template_selector.setObjectName('carton_template')
+        self.product=self.field(99,749,235,24,'','Produk mengikuti template');self.product.setObjectName('carton_product');self.product.setReadOnly(True)
+        self.product.setStyleSheet(self.product.styleSheet()+' QLineEdit {color:#bcd8ec;background:#03202f;}')
+        self.batch=self.combo(99,778,235,24,[store.get('batch')]);self.batch.setEditable(True);self.batch.setObjectName('carton_batch')
+        self.target_list=self.combo(99,807,235,24,[]);self.target_list.setObjectName('carton_target_list')
+        self.auto_child=False;self.inputs=(self.template_selector,self.batch,self.target_list)
+        self.button('stage_lock',28,838,306,29,'KUNCI DATA','lock')
         self.scan_table=self.table(370,723,338,147,['WAKTU','KODE BOX','STATUS'],[67,188,75]);self.scan_table.verticalHeader().setDefaultSectionSize(23);self.scan_table.horizontalHeader().setFixedHeight(25)
         self.result_table=self.table(740,723,341,147,['WAKTU','KODE CARTON','STATUS'],[66,186,80]);self.result_table.verticalHeader().setDefaultSectionSize(23);self.result_table.horizontalHeader().setFixedHeight(25)
         self.scan_table.cellDoubleClicked.connect(self.scan_detail);self.result_table.cellDoubleClicked.connect(self.result_detail)
@@ -38,8 +40,8 @@ class CartonPage(OperationPage):
         self.cell_buttons=[]
         for i in range(12):
             row,col=divmod(i,4);b=self.hotspot('carton_cell_'+str(i),40+col*260,244+row*136,240,120);self.cell_buttons.append(b)
-        self.product.currentIndexChanged.connect(self.product_changed);self.batch.currentTextChanged.connect(self.batch_changed)
-        self.template_selector.currentIndexChanged.connect(self.start_template);self.action.connect(self.local_action)
+        self.batch.currentTextChanged.connect(self.batch_changed)
+        self.template_selector.currentIndexChanged.connect(self.template_changed);self.action.connect(self.local_action)
 
     def configure_templates(self,runtime,print_callback):
         self.runtime=runtime;self.print_callback=print_callback;self.repo=CartonRepository(self.store,runtime)
@@ -63,23 +65,58 @@ class CartonPage(OperationPage):
         for label,data in items:combo.addItem(label,data)
         index=combo.findData(previous);combo.setCurrentIndex(index if index>=0 else 0);combo.blockSignals(False)
 
-    def product_changed(self,*_):
-        if self.run and self.run['state']=='OPEN':return
-        self.run=None;self.refresh_choices();self.refresh()
+    def template_changed(self,*_):
+        if self.run:return
+        self.refresh_choices()
+        self.message=('Template dipilih. '+('Batch dan list mengikuti agregasi Tahap 1.' if self.auto_child else 'Tentukan batch dan list data.')+' Tekan KUNCI DATA untuk memulai.') if self.template_selector.currentData() else 'Pilih template carton aktif untuk memulai.'
+        self.update()
 
     def batch_changed(self,*_):
         if self.repo and not (self.run and self.run['state']=='OPEN'):self.refresh_choices()
 
+    def current_document(self):
+        if self.run:return self.run['document']
+        identifier=self.template_selector.currentData()
+        if not identifier:return None
+        try:return self.runtime.repo.get(identifier)['document']
+        except ValueError:return None
+
+    def current_product(self):
+        doc=self.current_document()
+        return self.repo.product_for(doc) if doc else None
+
+    def child_template_id(self):
+        doc=self.current_document()
+        return doc.get('child_template_id') if doc else None
+
+    def set_batch_items(self,items,editable):
+        current=self.batch.currentText();self.batch.blockSignals(True)
+        if self.batch.isEditable()!=editable:self.batch.setEditable(editable)
+        self.batch.clear();self.batch.addItems(items)
+        if editable and current:self.batch.setCurrentText(current)
+        elif current in items:self.batch.setCurrentText(current)
+        self.batch.blockSignals(False)
+
     def refresh_choices(self):
         if not self.repo:return
         docs=self.repo.templates()
-        products={product_key(d['product']):d['product'] for d in docs}
-        self.fill_combo(self.product,[(p['name'],p) for p in products.values()])
-        product=self.product.currentData()
-        templates=[('Pilih template carton…',None)]+[(r['name']+' • '+r['document']['child_level'],r['id']) for r in docs if r['product']==product]
-        self.fill_combo(self.template_selector,templates)
-        lists=self.repo.lists(product,self.batch.currentText())
-        self.fill_combo(self.target_list,[('SEMUA BOX SIAP / SCAN LANGSUNG',None)]+[(f"{r['name']} | {r['quantity']} box",r['id']) for r in lists])
+        self.fill_combo(self.template_selector,[('Pilih template carton…',None)]+[(r['name']+' • '+r['document']['child_level'],r['id']) for r in docs])
+        doc=self.current_document();product=self.current_product()
+        self.product.setText(product['name'] if product else '');self.product.setCursorPosition(0)
+        self.auto_child=bool(doc) and doc['child_level']=='BOX'
+        if self.auto_child:
+            # Boxes finished in stage 1 decide the batch and the target list here.
+            pending=self.repo.pending_batches(product,doc.get('child_template_id'))
+            batches=[self.run['batch']] if self.run else [row['batch'] for row in pending]
+            self.set_batch_items(batches,False)
+            ready=next((row['quantity'] for row in pending if row['batch']==self.batch.currentText()),0)
+            self.fill_combo(self.target_list,[(f'OTOMATIS • BOX SIAP TAHAP 1 ({ready} box)' if self.batch.currentText() else 'Belum ada box siap dari Tahap 1',None)])
+        else:
+            self.set_batch_items([self.batch.currentText() or self.store.get('batch')],True)
+            lists=self.repo.unit_lists(product,self.batch.currentText())
+            self.fill_combo(self.target_list,[('SCAN LANGSUNG (tanpa list)',None)]+[(f"{r['name']} | {r['quantity']} unit",r['id']) for r in lists])
+        locked=bool(self.run)
+        self.batch.setEnabled(not locked and not self.auto_child);self.target_list.setEnabled(not locked and not self.auto_child)
 
     def refresh(self):
         if not self.repo:return
@@ -94,13 +131,34 @@ class CartonPage(OperationPage):
                 for j,value in enumerate(values):
                     item=QTableWidgetItem(str(value));item.setToolTip(str(value));table.setItem(i,j,item)
                     if j==2:item.setForeground(QColor(GREEN if status in ('VALID','SELESAI') else BLUE if status=='AKTIF' else YELLOW if status=='DUPLIKAT' else RED))
+        self.buttons['stage_lock'].setText('BUKA KUNCI DATA' if self.run else 'KUNCI DATA')
         self.update()
+
+    def toggle_lock(self):
+        if self.run:self.release_session('Data dibuka. Pilih template, batch dan list data untuk sesi berikutnya.');return
+        if not self.template_selector.currentData():self.notify('Pilih template carton aktif terlebih dahulu.');return
+        self.start_template()
+
+    def release_session(self,message):
+        if self.run:
+            try:self.runtime.reset_empty(self.run['id'])
+            except ValueError as exc:self.notify(str(exc));return False
+        if hasattr(self,'settings_runtime'):self.settings_runtime.scanner_armed['CARTON']=False
+        self.run=None;self.filled=0;self.child_codes=[];self.grid_page=0;self.scanning=False;self.cfg=dict(self.CONFIG['CARTON'])
+        self.buttons['stage_start_scan'].setText('START SCAN')
+        for widget in self.inputs+(self.mfd,):widget.setEnabled(True)
+        with self.store.db:self.store.put('carton_current_run',None)
+        self.refresh_choices();self.template_selector.blockSignals(True);self.template_selector.setCurrentIndex(0);self.template_selector.blockSignals(False)
+        self.notify(message);self.refresh();self.changed.emit();return True
 
     def start_template(self,*_):
         if not self.repo:return
         identifier=self.template_selector.currentData()
         if not identifier:
             self.run=None;self.filled=0;self.child_codes=[];self.scanning=False;self.update();return
+        self.refresh_choices()
+        if self.auto_child and not self.batch.currentText():
+            self.run=None;self.message='Belum ada box Tahap 1 yang siap untuk carton ini. Selesaikan dan cetak label box terlebih dahulu.';self.update();return
         try:
             self.grid_page=0;self.update_run(self.repo.start(identifier,self.batch.currentText(),self.mfd.text(),self.target_list.currentData()))
             self.scanning=self.run['state']=='OPEN';self.message='Sesi siap. Scan '+self.cfg['child'].lower()+' dengan scanner atau ketik kode lalu Enter.'
@@ -117,17 +175,19 @@ class CartonPage(OperationPage):
         self.scan_input.setPlaceholderText('Scan '+doc['child_level'].lower()+' / Enter')
         self.subtitle='PENYUSUNAN '+doc['child_level']+' KE CARTON'
         self.scan_table.setHorizontalHeaderLabels(['WAKTU','KODE '+doc['child_level'],'STATUS'])
-        self.product.blockSignals(True);self.product.setCurrentIndex(self.product.findData(self.repo.product_for(doc)));self.product.blockSignals(False)
         self.batch.blockSignals(True);self.batch.setCurrentText(run['batch']);self.batch.blockSignals(False)
         self.refresh_choices()
+        product=self.repo.product_for(doc)
+        self.product.setText(product['name'] if product else doc['data'].get('product_name',''));self.product.setCursorPosition(0)
         self.template_selector.blockSignals(True);self.template_selector.setCurrentIndex(self.template_selector.findData(run['template_id']));self.template_selector.blockSignals(False)
         self.target_list.blockSignals(True);self.target_list.setCurrentIndex(max(0,self.target_list.findData(meta.get('list_id'))));self.target_list.blockSignals(False)
         date=QDate.fromString(meta.get('mfd',doc['data']['mfg_date']),'dd/MM/yyyy')
         if date.isValid():self.mfd.setDate(date)
         # Session inputs are a snapshot; reset is the explicit route to another session.
-        for widget in (self.product,self.batch,self.target_list,self.template_selector,self.mfd):widget.setEnabled(False)
+        for widget in self.inputs+(self.mfd,):widget.setEnabled(False)
         if run['state']!='OPEN':self.scanning=False
         self.buttons['stage_start_scan'].setText(('STOP SCAN' if self.scanning else 'START SCAN')+' '+self.cfg['child'])
+        self.buttons['stage_lock'].setText('BUKA KUNCI DATA')
         self.update()
 
     def scan(self):
@@ -163,19 +223,16 @@ class CartonPage(OperationPage):
                 self.settings_runtime.scanner_armed['CARTON']=False
                 self.message='Scan dijeda. Data sesi tetap tersimpan.'
             self.buttons['stage_start_scan'].setText(('STOP SCAN' if self.scanning else 'START SCAN')+' '+self.cfg['child']);self.update()
-        elif name=='stage_lock':
-            if not self.run:self.notify('Pilih template dan scan box terlebih dahulu.');return
-            try:self.update_run(self.repo.finish(self.run['id']));self.message='Carton dikunci. Cetak label lalu lakukan verifikasi.';self.refresh();self.changed.emit()
+        elif name=='stage_lock':self.toggle_lock()
+        elif name=='stage_close_carton':
+            if not self.run:self.notify('Kunci data dan scan child terlebih dahulu.');return
+            try:
+                self.update_run(self.repo.finish(self.run['id']));self.message='Carton dikunci. Cetak label lalu lakukan verifikasi.'
+                if self.run['print_state']=='PENDING':self.print_run(automatic=True)
+                self.refresh();self.changed.emit()
             except ValueError as exc:self.notify(str(exc))
         elif name in ('stage_print_label','carton_print_step'):self.print_run()
-        elif name=='stage_reset':
-            if self.run:
-                try:self.runtime.reset_empty(self.run['id'])
-                except ValueError as exc:self.notify(str(exc));return
-            self.run=None;self.filled=0;self.child_codes=[];self.grid_page=0;self.scanning=False;self.cfg=dict(self.CONFIG["CARTON"]);self.buttons["stage_start_scan"].setText("START SCAN")
-            for widget in (self.product,self.batch,self.target_list,self.template_selector,self.mfd):widget.setEnabled(True)
-            with self.store.db:self.store.put('carton_current_run',None)
-            self.refresh_choices();self.template_selector.blockSignals(True);self.template_selector.setCurrentIndex(0);self.template_selector.blockSignals(False);self.notify("Pilih target dan template untuk membuka carton berikutnya.");self.refresh()
+        elif name=='stage_reset':self.release_session('Pilih template, batch dan list data untuk membuka carton berikutnya.')
         elif name=='stage_upload':self.settings_runtime.upload(level='CARTON')
         elif name=='carton_targets':self.show_targets()
         elif name=='carton_verify':self.verify_dialog(self.run)
@@ -187,7 +244,13 @@ class CartonPage(OperationPage):
 
     def print_run(self,automatic=False):
         if not self.run:self.notify('Pilih carton terlebih dahulu.');return
-        if self.run['state']!='COMPLETE':self.notify('Kunci carton sebelum mencetak label.');return
+        if self.run['state']!='COMPLETE':
+            if automatic:return
+            minimum=self.run['document']['aggregation_min']
+            if self.filled<minimum:self.notify(f'Isi carton baru {self.filled}; target minimum template {minimum}.');return
+            if MessageBox.question(self,'Kunci carton',f'Carton berisi {self.filled} dari {self.cfg["capacity"]} {self.cfg["child"].lower()}. Kunci carton sekarang lalu cetak label?')!=MessageBox.StandardButton.Yes:return
+            try:self.update_run(self.repo.finish(self.run['id']))
+            except ValueError as exc:self.notify(str(exc));return
         if self.run['print_state']=='SENT' and not automatic:
             if MessageBox.question(self,'Cetak ulang','Cetak ulang label '+self.run['parent_code']+'?')!=MessageBox.StandardButton.Yes:return
             try:
@@ -241,51 +304,38 @@ class CartonPage(OperationPage):
         finally:self.verification_dialog=None
 
     def show_targets(self):
-        dialog=AppDialog(self);dialog.setWindowTitle('Data target box untuk carton');dialog.resize(840,570);layout=QVBoxLayout(dialog)
-        info=QLabel('Box siap berasal dari sesi Box selesai dan label tercetak, sesuai produk/batch. Pilih box untuk membuat list atau impor daftar kode CSV.');info.setWordWrap(True);layout.addWidget(info)
+        dialog=AppDialog(self);dialog.setWindowTitle('Data target carton');dialog.resize(840,560);layout=QVBoxLayout(dialog)
+        info=QLabel();info.setWordWrap(True);layout.addWidget(info)
         from PySide6.QtWidgets import QTableWidget,QAbstractItemView
-        grid=QTableWidget(0,4);grid.setHorizontalHeaderLabels(['PILIH','KODE BOX','ISI UNIT','STATUS']);grid.setColumnWidth(0,52);grid.setColumnWidth(1,370);grid.setColumnWidth(2,100);grid.horizontalHeader().setStretchLastSection(True);grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);layout.addWidget(grid)
-        name=QLineEdit('CARTON LIST');name.setPlaceholderText('Nama list target');layout.addWidget(name)
+        grid=QTableWidget(0,3);grid.setHorizontalHeaderLabels(['KODE','ISI','STATUS'])
+        grid.setColumnWidth(0,430);grid.setColumnWidth(1,110);grid.horizontalHeader().setStretchLastSection(True)
+        grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers);layout.addWidget(grid)
         rows=[]
         def load():
             nonlocal rows
-            if self.target_list.currentData():
-                rows=[dict(r) for r in self.store.db.execute("SELECT t.code,COALESCE(r.quantity,0) quantity,CASE WHEN c.code IS NULL THEN 'BELUM SCAN' ELSE 'TERAGREGASI' END state FROM carton_targets t LEFT JOIN aggregation_runs r ON r.level='BOX' AND r.parent_code=t.code LEFT JOIN aggregation_children c ON c.child_level='BOX' AND c.code=t.code WHERE t.list_id=? ORDER BY t.rowid",(self.target_list.currentData(),))]
-            else:rows=self.repo.candidates(self.product.currentData(),self.batch.currentText())
+            product=self.current_product();batch=self.batch.currentText()
+            if self.auto_child:
+                rows=[dict(code=r['code'],quantity=f"{r['quantity']} unit",state=r['state']) for r in self.repo.candidates(product,batch,self.child_template_id())]
+                info.setText(f"{len(rows)} box Tahap 1 siap untuk batch {batch or '—'}. Target carton mengikuti hasil agregasi Tahap 1 secara otomatis: hanya box selesai, sudah dicetak dan belum masuk carton yang diterima.")
+            elif self.target_list.currentData():
+                rows=[dict(code=r[0],quantity='1 unit',state=r[1]) for r in self.store.db.execute("SELECT t.serial,CASE WHEN c.code IS NULL THEN 'BELUM SCAN' ELSE 'TERAGREGASI' END FROM box_targets t LEFT JOIN aggregation_children c ON c.child_level='UNIT' AND c.code=t.serial WHERE t.list_id=? ORDER BY t.rowid LIMIT 1000",(self.target_list.currentData(),))]
+                info.setText(f'{len(rows)} unit pada list terpilih. List unit diimpor melalui halaman Tahap 1 / Box.')
+            else:
+                rows=[];info.setText('Template memakai child langsung: pilih list unit pada panel atau scan langsung tanpa list. List unit diimpor melalui halaman Tahap 1 / Box.')
             grid.setRowCount(min(1000,len(rows)))
             for i,r in enumerate(rows[:1000]):
-                item=QTableWidgetItem();item.setFlags(Qt.ItemFlag.ItemIsEnabled|Qt.ItemFlag.ItemIsUserCheckable);item.setCheckState(Qt.CheckState.Unchecked);grid.setItem(i,0,item)
-                for j,value in enumerate((r['code'],r['quantity'],r['state']),1):grid.setItem(i,j,QTableWidgetItem(str(value)))
-            info.setText(f"{len(rows)} box tersedia dalam tampilan ini. Centang box lalu Simpan List. Pratinjau maksimal 1.000 baris.")
-        def require_idle():
-            if self.run:MessageBox.warning(dialog,'Sesi aktif','Selesaikan / reset sesi terlebih dahulu sebelum mengganti list target.');return False
-            return True
-        def select_all():
-            for i in range(grid.rowCount()):grid.item(i,0).setCheckState(Qt.CheckState.Checked)
-        def save_list():
-            if not require_idle():return
-            codes=[rows[i]['code'] for i in range(grid.rowCount()) if grid.item(i,0).checkState()==Qt.CheckState.Checked]
-            try:
-                identifier=self.repo.create_targets(name.text(),codes,self.product.currentData(),self.batch.currentText());self.refresh_choices();self.target_list.setCurrentIndex(self.target_list.findData(identifier));load();self.notify('List target carton tersimpan.')
-            except ValueError as exc:MessageBox.warning(dialog,'List belum tersimpan',str(exc))
-        def import_file():
-            if not require_idle():return
-            path,_=FileDialog.getOpenFileName(dialog,'Impor target box','','CSV (*.csv)')
-            if path:
-                try:
-                    identifier=self.repo.import_targets(path,self.product.currentData(),self.batch.currentText());self.refresh_choices();self.target_list.setCurrentIndex(self.target_list.findData(identifier));load();self.notify('List target carton berhasil diimpor.')
-                except (ValueError,OSError,csv.Error) as exc:MessageBox.warning(dialog,'Impor gagal',str(exc))
+                for j,value in enumerate((r['code'],r['quantity'],r['state'])):grid.setItem(i,j,QTableWidgetItem(str(value)))
         def export():
-            path,_=FileDialog.getSaveFileName(dialog,'Ekspor target box','target-carton.csv','CSV (*.csv)')
+            path,_=FileDialog.getSaveFileName(dialog,'Ekspor data target','target-carton.csv','CSV (*.csv)')
             if path:
                 try:
                     with open(path,'w',newline='',encoding='utf-8-sig') as handle:
                         writer=csv.writer(handle);writer.writerow(['code','product','batch'])
-                        for r in rows:writer.writerow([r['code'],self.product.currentText(),self.batch.currentText()])
-                    self.notify('Target carton diekspor.')
+                        for r in rows:writer.writerow([r['code'],self.product.text(),self.batch.currentText()])
+                    self.notify('Data target carton diekspor.')
                 except OSError as exc:MessageBox.warning(dialog,'Ekspor gagal',str(exc))
         row=QHBoxLayout();layout.addLayout(row)
-        for label,call in [('Pilih semua',select_all),('Simpan list',save_list),('Impor CSV',import_file),('Ekspor CSV',export),('Tutup',dialog.accept)]:
+        for label,call in [('Muat ulang',load),('Ekspor CSV',export),('Tutup',dialog.accept)]:
             b=QPushButton(label);b.clicked.connect(call);row.addWidget(b)
         load();dialog.exec()
 
@@ -314,9 +364,9 @@ class CartonPage(OperationPage):
         self.text(28,651,116,19,'PROGRES AGREGASI',10,MUTED,True);self.rect(155,653,600,12,'#103a55','#09283d','#387392',6)
         if self.filled:self.rect(157,655,596*ratio,8,BLUE,'#0085c5',BLUE,4)
         self.text(768,648,214,23,f'{self.filled}/{capacity} {self.cfg["child"]} ({ratio*100:.1f}%)',11);self.text(982,648,101,23,f'CACHE: {self.filled}',10,align=Qt.AlignmentFlag.AlignRight)
-        self.panel(15,685,336,202,'PILIH PRODUK / BATCH / LIST DATA');self.panel(357,685,364,202,'DATA '+self.cfg['child']+' TER-SCAN • 5 TERAKHIR');self.panel(727,685,368,202,'HASIL AGREGASI CARTON')
-        for y,label in [(720,'PRODUK'),(749,'BATCH'),(778,'LIST DATA'),(807,'TEMPLATE')]:self.text(28,y,69,24,label,10,MUTED)
-        self.text(28,866,306,19,f'● {self.filled}/{capacity} {self.cfg["child"].lower()}   •   CACHE {self.filled}   •   '+('READY' if self.scanning else 'SIAP' if self.run else 'PILIH TEMPLATE'),9,GREEN)
+        self.panel(15,685,336,202,'PILIH TEMPLATE / BATCH / LIST DATA');self.panel(357,685,364,202,'DATA '+self.cfg['child']+' TER-SCAN • 5 TERAKHIR');self.panel(727,685,368,202,'HASIL AGREGASI CARTON')
+        for y,label in [(720,'TEMPLATE'),(749,'PRODUK'),(778,'BATCH'),(807,'LIST DATA')]:self.text(28,y,69,24,label,10,MUTED)
+        self.text(28,866,306,19,f'● {self.filled}/{capacity} {self.cfg["child"].lower()}   •   '+('BATCH & LIST OTOMATIS TAHAP 1' if self.auto_child else 'BATCH & LIST DIPILIH')+'   •   '+('READY' if self.scanning else 'SIAP' if self.run else 'PILIH TEMPLATE'),9,GREEN)
         self.panel(15,893,1080,97);self.text(29,908,106,25,'KONTROL LINE',11,WHITE,True);self.text(787,910,128,24,'MODE: '+self.store.get('mode','AGGREGATION'),10,GREEN,True)
         self.text(28,952,35,28,'MFD',11);self.text(198,952,40,28,'SCAN',10);self.text(478,948,603,36,self.message,10,GREEN if self.message.startswith(('VALID','Sesi siap','Verifikasi')) else YELLOW,wrap=True)
 

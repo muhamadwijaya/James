@@ -39,7 +39,7 @@ class BoxPage(OperationPage):
         self.scan_table=self.table(370,723,338,147,['WAKTU','SERIAL UNIT','STATUS'],[67,188,75]);self.scan_table.verticalHeader().setDefaultSectionSize(23);self.scan_table.horizontalHeader().setFixedHeight(25)
         self.result_table=self.table(740,723,341,147,['WAKTU','KODE BOX','STATUS'],[66,186,80]);self.result_table.verticalHeader().setDefaultSectionSize(23);self.result_table.horizontalHeader().setFixedHeight(25)
         self.scan_table.cellDoubleClicked.connect(self.scan_detail);self.result_table.cellDoubleClicked.connect(self.result_detail)
-        for spec in [('stage_start_scan',139,899,146,43,'START SCAN','play','green'),('stage_print_label',297,899,153,43,'PRINT LABEL','printer','blue'),('stage_reset',462,899,143,43,'RESET BOX','sync','gold'),('stage_close_box',617,899,161,43,'KUNCI BOX','lock','blue'),('stage_upload',923,899,158,43,'UPLOAD INSTAN','upload','blue')]:self.button(*spec)
+        for spec in [('stage_start_scan',139,899,146,43,'START SCAN','play','green'),('stage_print_label',297,899,153,43,'PRINT LABEL','printer','blue'),('stage_reset',462,899,143,43,'RESET BOX','sync','gold'),('stage_upload',923,899,158,43,'UPLOAD INSTAN','upload','blue')]:self.button(*spec)
         self.button('stage_verify',903,594,180,28,'VERIFIKASI BOX','check_circle','green')
         self.scan_mode_select=self.combo(935,463,148,23,list(SCAN_MODES));self.scan_mode_select.setObjectName('box_scan_mode')
         self.scan_mode_select.setToolTip('Sumber scan tahap 1: scanner gun (port COM/keyboard) atau kamera IP.')
@@ -313,7 +313,14 @@ class BoxPage(OperationPage):
 
     def print_run(self,automatic=False):
         if not self.run:self.notify('Pilih box terlebih dahulu.');return
-        if self.run['state']!='COMPLETE':self.notify('Kunci box sebelum mencetak label.');return
+        if self.run['state']!='COMPLETE':
+            # Below the maximum the operator may still close the box and print now.
+            if automatic:return
+            minimum=self.run['document']['aggregation_min']
+            if self.filled<minimum:self.notify(f'Isi box baru {self.filled} unit; target minimum template {minimum} unit.');return
+            if MessageBox.question(self,'Kunci box',f'Box berisi {self.filled} dari {self.cfg["capacity"]} unit. Kunci box sekarang lalu cetak label?')!=MessageBox.StandardButton.Yes:return
+            try:self.update_run(self.runtime.finish_partial(self.run['id']));self.stop_scanner()
+            except ValueError as exc:self.notify(str(exc));return
         if self.run['print_state']=='SENT' and not automatic:
             if MessageBox.question(self,'Cetak ulang','Cetak ulang label '+self.run['parent_code']+'?')!=MessageBox.StandardButton.Yes:return
             try:

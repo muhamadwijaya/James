@@ -39,13 +39,25 @@ class CartonRepository:
         if not product:return []
         return [dict(r) for r in self.store.db.execute('SELECT l.*,COUNT(t.code) quantity FROM carton_target_lists l JOIN carton_targets t ON l.id=t.list_id WHERE product=? AND batch=? GROUP BY l.id ORDER BY created_at DESC',(product_key(product),batch))]
 
-    def candidates(self,product,batch):
+    def unit_lists(self,product,batch):
+        """Unit serial lists imported on the BOX page, for direct child cartons."""
         if not product:return []
-        # Find only finished, printed, unassigned boxes from the chosen product/batch.
-        rows=self.store.db.execute("""SELECT r.* FROM aggregation_runs r JOIN packages p ON p.stage='BOX' AND p.code=r.parent_code
-          WHERE r.level='BOX' AND r.state='COMPLETE' AND r.print_state='SENT' AND r.batch=? AND p.active=1 AND COALESCE(p.parent,'')=''
-          AND NOT EXISTS(SELECT 1 FROM aggregation_children c WHERE c.child_level='BOX' AND c.code=r.parent_code)
-          ORDER BY r.created_at,r.rowid""",(batch,)).fetchall()
+        return [dict(r) for r in self.store.db.execute('SELECT l.*,COUNT(t.serial) quantity FROM box_target_lists l JOIN box_targets t ON l.id=t.list_id WHERE product=? AND batch=? GROUP BY l.id ORDER BY created_at DESC',(product_key(product),batch))]
+
+    def candidates(self,product,batch,child_template_id=None):
+        if not batch:return []
+        return self.pending_boxes(product,child_template_id,batch)
+
+    def pending_boxes(self,product,child_template_id=None,batch=None):
+        """Stage-1 boxes that are finished, printed and not aggregated at level 2 yet."""
+        if not product:return []
+        sql="""SELECT r.* FROM aggregation_runs r JOIN packages p ON p.stage='BOX' AND p.code=r.parent_code
+          WHERE r.level='BOX' AND r.state='COMPLETE' AND r.print_state='SENT' AND p.active=1 AND COALESCE(p.parent,'')=''
+          AND NOT EXISTS(SELECT 1 FROM aggregation_children c WHERE c.child_level='BOX' AND c.code=r.parent_code)"""
+        args=[]
+        if batch is not None:sql+=' AND r.batch=?';args.append(batch)
+        if child_template_id:sql+=' AND r.template_id=?';args.append(child_template_id)
+        rows=self.store.db.execute(sql+' ORDER BY r.created_at,r.rowid',args).fetchall()
         result=[];nodes=self.revisions.rows()
         for row in rows:
             doc=json.loads(row['document'])
@@ -53,6 +65,12 @@ class CartonRepository:
             if any(n['status']!='VALID' for n in self.revisions.family(('BOX',row['parent_code']),nodes)):continue
             result.append(dict(code=row['parent_code'],batch=row['batch'],quantity=row['quantity'],template_id=row['template_id'],state='SIAP'))
         return result
+
+    def pending_batches(self,product,child_template_id=None):
+        """Batches from stage 1 that still have boxes waiting for a carton, oldest first."""
+        counts={}
+        for row in self.pending_boxes(product,child_template_id):counts[row['batch']]=counts.get(row['batch'],0)+1
+        return [dict(batch=batch,quantity=quantity) for batch,quantity in counts.items()]
 
     def create_targets(self,name,codes,product,batch):
         if not product or not batch.strip():raise ValueError('Pilih produk dan batch terlebih dahulu.')
@@ -93,8 +111,9 @@ class CartonRepository:
         datetime.strptime(mfd,'%d/%m/%Y');doc=self.runtime.repo.get(template_id)['document'];product=self.product_for(doc)
         if doc['level']!='CARTON' or doc['child_level'] not in ('BOX','UNIT') or not product:raise ValueError('Lengkapi relasi child pada template CARTON terlebih dahulu.')
         if list_id:
-            target=self.store.db.execute('SELECT * FROM carton_target_lists WHERE id=?',(list_id,)).fetchone()
-            if doc['child_level']!='BOX' or not target or target['batch']!=batch or target['product']!=product_key(product):raise ValueError('List box tidak sesuai produk / batch / mode template.')
+            table='carton_target_lists' if doc['child_level']=='BOX' else 'box_target_lists'
+            target=self.store.db.execute('SELECT * FROM '+table+' WHERE id=?',(list_id,)).fetchone()
+            if not target or target['batch']!=batch or target['product']!=product_key(product):raise ValueError('List data tidak sesuai produk / batch / mode template.')
         existing=self.store.db.execute("SELECT id FROM aggregation_runs WHERE template_id=? AND batch=? AND (state='OPEN' OR (state='COMPLETE' AND print_state!='SENT')) ORDER BY created_at DESC LIMIT 1",(template_id,batch)).fetchone()
         if existing:
             meta=self.meta(existing['id'])
@@ -119,7 +138,10 @@ class CartonRepository:
             if run['state']!='OPEN':raise ValueError('Carton sudah selesai. Mulai sesi berikutnya.')
             self.validate_contents(run)
             meta=self.meta(identifier)
-            if meta.get('list_id') and not self.store.db.execute('SELECT 1 FROM carton_targets WHERE list_id=? AND code=?',(meta['list_id'],code)).fetchone():raise ValueError('Kode box tidak terdaftar dalam list target sesi ini.')
+            if meta.get('list_id'):
+                query=('SELECT 1 FROM carton_targets WHERE list_id=? AND code=?' if doc['child_level']=='BOX'
+                       else 'SELECT 1 FROM box_targets WHERE list_id=? AND serial=?')
+                if not self.store.db.execute(query,(meta['list_id'],code)).fetchone():raise ValueError('Kode '+doc['child_level'].lower()+' tidak terdaftar dalam list target sesi ini.')
             if doc['child_level']=='BOX':
                 if self.store.db.execute("SELECT 1 FROM aggregation_children WHERE child_level='BOX' AND code=?",(code,)).fetchone():raise ValueError('Box sudah terikat pada agregasi; duplikat ditolak.')
                 child=self.store.db.execute("SELECT r.*,p.active,p.parent FROM aggregation_runs r JOIN packages p ON p.stage='BOX' AND p.code=r.parent_code WHERE r.level='BOX' AND r.parent_code=?",(code,)).fetchone()

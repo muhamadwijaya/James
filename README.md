@@ -35,8 +35,20 @@ mengunci pilihan tersebut dan menyiapkan sesi agregasi. Scanner kemudian
 memverifikasi otomatis setiap unit yang sesuai template dan list data terkunci;
 data hanya dapat dibuka kembali selama box belum berisi unit.
 
-**Tombol START CONVEYOR dihapus** dari Tahap 1, 2, dan 3. Pada halaman Box
-tempatnya diisi **KUNCI BOX** untuk mengunci box sebelum target maksimum.
+**Tombol START CONVEYOR dan KUNCI BOX dihapus** dari kontrol line Tahap 1, 2
+dan 3. Kemasan yang belum mencapai target maksimum tetap dapat ditutup lewat
+tombol **PRINT LABEL**: aplikasi meminta konfirmasi, mengunci kemasan, lalu
+mencetak labelnya.
+
+**Tahap 2 / CARTON mengikuti pola yang sama.** Template dipilih lebih dulu dan
+produk hanya ditampilkan. Bila template dibuat dengan child **BOX**, batch dan
+list data **otomatis mengikuti agregasi Tahap 1**: batch diambil dari box yang
+sudah selesai, sudah dicetak dan belum masuk carton, sedangkan list target
+memakai box siap tersebut (`OTOMATIS • BOX SIAP TAHAP 1`) sehingga tidak perlu
+dibuat manual. Bila template memakai **child langsung (UNIT)**, batch dan list
+unit dapat dipilih sendiri — list unit diambil dari daftar serial yang diimpor
+pada halaman Tahap 1 / Box. Tombol **KUNCI DATA / BUKA KUNCI DATA** membuka dan
+menutup sesi carton seperti pada Tahap 1.
 
 **Progres agregasi menampilkan target maksimum template yang dikunci**
 (`MAX TEMPLATE n`). Saat jumlah maksimum tercapai, label agregasi **dicetak

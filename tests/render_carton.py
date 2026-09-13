@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory() as tmp:
  for i in range(12):
   r=window.pages['box'].repo.start(box_id,store.get('batch'),'10/09/2026');r=window.pages['box'].repo.scan(r['id'],f'PREVIEW-UNIT-{i+1:04}');runtime.print_result(r['id']);codes.append(r['parent_code'])
  doc=default_document('CARTON');doc.update(child_template_id=box_id,aggregation_max=12);carton_id=runtime.repo.save(doc);page.refresh()
- lid=page.repo.create_targets('CARTON LIST',codes,product_choices(store)[0],store.get('batch'));page.refresh();page.target_list.setCurrentIndex(page.target_list.findData(lid));page.template_selector.setCurrentIndex(page.template_selector.findData(carton_id))
+ page.refresh();page.template_selector.setCurrentIndex(page.template_selector.findData(carton_id));page.local_action('stage_lock')
  for code in codes[:5]:page.scan_input.setText(code);page.scan()
  page.message='PRATINJAU DATA UJI • 5 box terhubung ke carton tersimpan.';app.processEvents();page.grab().save(str(out/'carton-lengkap.png'))
  image=QImage(3840,2880,QImage.Format.Format_RGB32);p=QPainter(image);p.scale(3840/1448,2880/1086);page.render(p,QPoint());p.end();image.save(str(out/'Carton_Lengkap_4K_v3_9.png'))

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 from agregasi.app import MainWindow
 from agregasi.box_page import GRID
 from agregasi.store import Store
+from agregasi.ui_dialogs import MessageBox
 
 
 class BoxUiTests(unittest.TestCase):
@@ -30,7 +31,14 @@ class BoxUiTests(unittest.TestCase):
         p.local_action('stage_start_scan');p.scan_input.setText('UNIT-2');p.scan();self.assertEqual(p.filled,1)
         p.scan_input.clear();p.local_action('stage_start_scan');p.scan_input.setText('UNIT-2');p.scan();self.assertEqual(p.filled,2)
         p.local_action('stage_reset');self.assertEqual(p.filled,2);self.assertIn('berisi child',p.message)
-        p.local_action('stage_close_box');p.print_callback=lambda *args:True;p.local_action('stage_print_label');p.local_action('stage_reset')
+        # The KUNCI BOX button is gone; PRINT LABEL closes a box below the maximum.
+        self.assertNotIn('stage_close_box',p.buttons)
+        p.print_callback=lambda *args:True
+        with patch('agregasi.box_page.MessageBox.question',return_value=MessageBox.StandardButton.No):
+            p.local_action('stage_print_label');self.assertEqual(p.run['state'],'OPEN')
+        with patch('agregasi.box_page.MessageBox.question',return_value=MessageBox.StandardButton.Yes):
+            p.local_action('stage_print_label')
+        self.assertEqual(p.run['print_state'],'SENT');p.local_action('stage_reset')
         self.assertIsNone(p.run);self.assertEqual(p.filled,0)
         for control in (p.product,p.batch,p.target_list,p.template_selector,p.mfd):self.assertTrue(control.isEnabled())
     def test_template_is_chosen_first_and_lock_toggles_the_session(self):
