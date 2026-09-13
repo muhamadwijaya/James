@@ -14,6 +14,18 @@ DPI, jenis printer, dan penanda cetak otomatis saat maksimum.
 scanner gun dipakai. Bila scanner tahap 1 memakai kamera, area yang sama berubah
 menjadi **tampilan kamera** beserta status koneksinya.
 
+**Tahap 3 / PALLET memakai pola yang sama.** Template pallet tersimpan dipilih
+lebih dulu, produk hanya ditampilkan, sedangkan **batch dan list carton dapat
+dipilih sesuai data hasil Tahap 2**: batch hanya berisi batch yang masih punya
+carton selesai dan sudah dicetak namun belum masuk pallet, dan pilihan list
+memuat `SEMUA CARTON SIAP TAHAP 2 (n carton)` atau list carton tersimpan. Sesi
+dibuka dengan **KUNCI DATA / BUKA KUNCI DATA**.
+
+**Pallet hanya memakai scanner gun.** Tombol kamera pada halaman Pallet dihapus
+dan Pengaturan kini menampilkan kolom **SCANNER PALLET** (device, port COM,
+trigger, autofocus, exposure, resolusi) menggantikan kolom kamera pallet. Kamera
+yang tersisa adalah **KAMERA VERIFIKASI** untuk pemeriksaan label di semua tahap.
+
 **Pilihan scanner ada langsung di halaman Box.** Panel kanan bawah memuat
 **MODE SCAN** (`SCANNER GUN` / `KAMERA IP`); saat mode kamera dipilih, kolom
 **IP** dan **PORT** beserta tombol **SAMBUNG** muncul di panel yang sama. Pilihan

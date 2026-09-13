@@ -12,8 +12,8 @@ from agregasi.store import Store
 from agregasi.template_model import default_document,new_element
 from agregasi.template_database import product_choices
 from agregasi.label_render import render_image
-from agregasi.pallet_camera import PalletCamera,decode_frame
-from agregasi.ui_dialogs import AppDialog
+from agregasi.pallet_camera import decode_frame
+from agregasi.ui_dialogs import AppDialog,MessageBox
 
 
 class PalletUiTests(unittest.TestCase):
@@ -29,7 +29,9 @@ class PalletUiTests(unittest.TestCase):
             r=self.window.pages['carton'].repo.start(self.carton_id,self.store.get('batch'),'10/09/2026');r=self.window.pages['carton'].repo.scan(r['id'],f'PALLET-UI-UNIT-{i}');self.runtime.print_result(r['id']);self.carton_codes.append(r['parent_code'])
         cfg=self.window.settings_runtime.repo.load();cfg.update(auto_upload=False,retry_count=0);self.window.settings_runtime.repo.save(cfg);self.page.refresh()
     def tearDown(self):self.window.close();self.store.close();self.tmp.cleanup();self.app.processEvents()
-    def start(self):self.page.template_selector.setCurrentIndex(self.page.template_selector.findData(self.pallet_id));self.assertIsNotNone(self.page.run)
+    def start(self):
+        p=self.page;p.template_selector.setCurrentIndex(p.template_selector.findData(self.pallet_id))
+        self.assertIsNone(p.run);p.local_action('stage_lock');self.assertIsNotNone(p.run)
     def fill(self):
         self.start()
         for code in self.carton_codes[:2]:self.page.scan_input.setText(code);self.page.scan()
@@ -42,19 +44,36 @@ class PalletUiTests(unittest.TestCase):
         printed=[];p.print_callback=lambda doc,*args:printed.append(doc) or True;p.buttons['stage_print_label'].click();self.assertEqual(p.run['print_state'],'SENT');self.assertEqual(printed[0]['data']['quantity'],'2 CARTON')
         self.assertEqual(p.repo.revisions.get(('PALLET',p.run['parent_code']))['print_state'],'TERKIRIM KE PRINTER')
         self.assertNotIn('stage_conveyor',p.buttons)
-    def test_target_dialog_and_verified_label_use_saved_data(self):
-        p=self.page
+    def test_template_batch_and_list_follow_stage_two(self):
+        p=self.page;product=product_choices(self.store)[0]
+        # Batch and list options come from cartons finished in stage 2.
+        self.assertEqual([r['batch'] for r in p.repo.pending_batches(product,self.carton_id)],[self.store.get('batch')])
+        p.template_selector.setCurrentIndex(p.template_selector.findData(self.pallet_id))
+        self.assertIsNone(p.run);self.assertEqual(p.product.text(),product['name']);self.assertTrue(p.product.isReadOnly())
+        self.assertEqual(p.batch.currentText(),self.store.get('batch'));self.assertTrue(p.batch.isEnabled())
+        self.assertIn('3 carton',p.target_list.itemText(0));self.assertTrue(p.target_list.isEnabled())
         def targets():
             d=next(d for d in self.window.findChildren(AppDialog) if d.isVisible());grid=d.findChild(QTableWidget);grid.item(0,0).setCheckState(Qt.CheckState.Checked)
             next(b for b in d.findChildren(QPushButton) if b.text()=='Simpan list').click();d.accept()
-        QTimer.singleShot(50,targets);p.show_targets();self.assertIsNotNone(p.target_list.currentData());self.start()
-        p.scan_input.setText(self.carton_codes[0]);p.scan();p.buttons['stage_lock'].click();p.print_callback=lambda *args:True;p.buttons['stage_print_label'].click()
+        QTimer.singleShot(50,targets);p.show_targets();self.assertIsNotNone(p.target_list.currentData())
+        p.local_action('stage_lock');self.assertIsNotNone(p.run)
+        self.assertFalse(p.batch.isEnabled());self.assertFalse(p.target_list.isEnabled())
+        self.assertEqual(p.repo.meta(p.run['id'])['list_id'],p.target_list.currentData())
+        self.assertNotIn('pallet_camera_scan',p.buttons)
+
+    def test_verified_label_uses_saved_data(self):
+        p=self.page;self.start()
+        p.scan_input.setText(self.carton_codes[0]);p.scan();p.print_callback=lambda *args:True
+        with patch('agregasi.pallet_page.MessageBox.question',return_value=MessageBox.StandardButton.Yes):
+            p.buttons['stage_print_label'].click()
+        self.assertEqual(p.run['print_state'],'SENT')
         def verify():
             d=p.verification_dialog;self.window.receive_device_scan('PALLET',p.run['parent_code']);d.findChild(QSpinBox).setValue(1)
             next(b for b in d.findChildren(QPushButton) if b.text()=='Simpan verifikasi').click()
         QTimer.singleShot(50,verify);p.verify_dialog(p.run);self.assertEqual(p.repo.meta(p.run['id'])['verified'],1)
     def test_pause_reset_and_restart_preserve_partial_pallet(self):
         p=self.page;self.start();p.scan_input.setText(self.carton_codes[0]);p.scan();p.buttons['stage_start_scan'].click();p.scan_input.setText(self.carton_codes[1]);p.scan();self.assertEqual(p.filled,1)
+        p.buttons['stage_lock'].click();self.assertIn('berisi child',p.message);self.assertIsNotNone(p.run)
         p.buttons['stage_reset'].click();self.assertEqual(p.filled,1);identifier=p.run['id']
         self.window.close();self.window=MainWindow(self.store);self.page=self.window.pages['pallet'];self.assertEqual(self.page.run['id'],identifier);self.assertEqual(self.page.child_codes,[self.carton_codes[0]])
     def test_grid_has_24_equal_cells_and_pages_without_changing_sidebar(self):
@@ -68,10 +87,11 @@ class PalletUiTests(unittest.TestCase):
         for i,r in enumerate(rects):
             self.assertGreaterEqual(r.top(),234);self.assertLess(r.bottom(),648)
             self.assertTrue(all(not r.intersects(other) for other in rects[i+1:]))
-    def test_camera_decoder_reads_real_codes_and_latches_repeated_frame(self):
+    def test_camera_decoder_reads_real_codes(self):
+        try:import zxingcpp
+        except ImportError:self.skipTest('Optional independent barcode decoder not installed.')
         code=self.carton_codes[0];doc=default_document('BOX');doc['elements']=[new_element('barcode',4,4,90,35,text=code)];frame=render_image(doc)
-        self.assertEqual(decode_frame(frame),[code]);cam=PalletCamera(self.window.settings_runtime,self.page);received=[];cam.decoded.connect(received.append);cam.last_image=frame
-        cam.read_barcode();cam.read_barcode();self.assertEqual(received,[code]);cam.read_barcode(force=True);self.assertEqual(received,[code,code]);cam.close();cam.deleteLater()
+        self.assertEqual(decode_frame(frame),[code])
     def test_pallet_upload_requires_actual_ack_and_only_sends_pallet(self):
         self.fill();requests=[]
         class Handler(BaseHTTPRequestHandler):

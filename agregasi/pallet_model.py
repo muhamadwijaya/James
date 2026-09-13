@@ -41,13 +41,26 @@ class PalletRepository:
         if not product:return []
         return [dict(r) for r in self.store.db.execute('SELECT l.*,COUNT(t.code) quantity FROM pallet_target_lists l JOIN pallet_targets t ON l.id=t.list_id WHERE product=? AND batch=? GROUP BY l.id ORDER BY created_at DESC',(product_key(product),batch))]
 
-    def candidates(self,product,batch):
+    def candidates(self,product,batch,child_template_id=None):
+        if not batch:return []
+        return self.pending_cartons(product,child_template_id,batch)
+
+    def pending_batches(self,product,child_template_id=None):
+        """Batches whose stage-2 cartons are still waiting for a pallet, oldest first."""
+        counts={}
+        for row in self.pending_cartons(product,child_template_id):counts[row['batch']]=counts.get(row['batch'],0)+1
+        return [dict(batch=batch,quantity=quantity) for batch,quantity in counts.items()]
+
+    def pending_cartons(self,product,child_template_id=None,batch=None):
         if not product:return []
         # Only finished, printed, unassigned cartons from the selected product/batch.
-        rows=self.store.db.execute("""SELECT r.* FROM aggregation_runs r JOIN packages p ON p.stage='CARTON' AND p.code=r.parent_code
-          WHERE r.level='CARTON' AND r.state='COMPLETE' AND r.print_state='SENT' AND r.batch=? AND p.active=1 AND COALESCE(p.parent,'')=''
-          AND NOT EXISTS(SELECT 1 FROM aggregation_children c WHERE c.child_level='CARTON' AND c.code=r.parent_code)
-          ORDER BY r.created_at,r.rowid""",(batch,)).fetchall()
+        sql="""SELECT r.* FROM aggregation_runs r JOIN packages p ON p.stage='CARTON' AND p.code=r.parent_code
+          WHERE r.level='CARTON' AND r.state='COMPLETE' AND r.print_state='SENT' AND p.active=1 AND COALESCE(p.parent,'')=''
+          AND NOT EXISTS(SELECT 1 FROM aggregation_children c WHERE c.child_level='CARTON' AND c.code=r.parent_code)"""
+        args=[]
+        if batch is not None:sql+=' AND r.batch=?';args.append(batch)
+        if child_template_id:sql+=' AND r.template_id=?';args.append(child_template_id)
+        rows=self.store.db.execute(sql+' ORDER BY r.created_at,r.rowid',args).fetchall()
         result=[];nodes=self.revisions.rows()
         for row in rows:
             doc=json.loads(row['document'])

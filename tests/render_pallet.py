@@ -22,7 +22,8 @@ with tempfile.TemporaryDirectory() as tmp:
   c=window.pages['carton'].repo.start(carton_id,store.get('batch'),'10/09/2026');c=window.pages['carton'].repo.scan(c['id'],b['parent_code']);runtime.print_result(c['id']);codes.append(c['parent_code'])
  for code in codes[:4]:
   r=page.repo.start(pallet_id,store.get('batch'),'10/09/2026');page.repo.scan(r['id'],code);r=page.repo.finish(r['id']);runtime.print_result(r['id']);page.repo.verify(r['id'],r['parent_code'],1)
- page.refresh();lid=page.repo.create_targets('PALLET LIST • 24 CARTON',codes[4:],product_choices(store)[0],store.get('batch'));page.refresh();page.target_list.setCurrentIndex(page.target_list.findData(lid));page.template_selector.setCurrentIndex(page.template_selector.findData(pallet_id))
+ page.refresh();page.template_selector.setCurrentIndex(page.template_selector.findData(pallet_id))
+ lid=page.repo.create_targets('PALLET LIST • 24 CARTON',codes[4:],product_choices(store)[0],store.get('batch'));page.refresh_choices();page.target_list.setCurrentIndex(page.target_list.findData(lid));page.local_action('stage_lock')
  for code in codes[4:12]:page.scan_input.setText(code);page.scan()
  page.message='DATA UJI • 8 carton terhubung ke pallet tersimpan. Menunggu scan berikutnya.';app.processEvents();page.grab().save(str(out/'pallet-lengkap.png'))
  image=QImage(3840,2880,QImage.Format.Format_RGB32);p=QPainter(image);p.scale(3840/1448,2880/1086);page.render(p,QPoint());p.end();image.save(str(out/'Pallet_Lengkap_4K_v3_10.png'))

@@ -50,7 +50,7 @@ def defaults():
                      'camera_ip': '192.168.10.3'+str(i), 'camera_port': 8080,
                      'trigger': 'AUTO', 'autofocus': True,
                      'exposure': 120, 'resolution': '1280 x 720'}
-                     for i, level in enumerate(('BOX', 'CARTON'), 1)},
+                     for i, level in enumerate(LEVELS, 1)},
         'camera': {'device': 'CAM-PTZ-01', 'address': '192.168.10.30',
                    'trigger': 'MANUAL', 'autofocus': True, 'exposure': 150,
                    'resolution': '1920 x 1080'},
@@ -139,6 +139,8 @@ def validate(raw):
         choice(obj, 'resolution', ('640 x 480', '1280 x 720', '1920 x 1080'))
         if not isinstance(obj['autofocus'], bool):
             raise ValueError('Autofocus harus aktif/nonaktif.')
+    if cfg['scanners']['PALLET']['mode'] != 'SCANNER GUN':
+        raise ValueError('Scanner PALLET hanya mendukung scanner gun.')
     for obj in cfg['scanners'].values():
         choice(obj, 'baud', (9600, 19200, 38400, 57600, 115200))
         choice(obj, 'mode', SCAN_MODES)

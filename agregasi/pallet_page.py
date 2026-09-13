@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor,QPen,QPainterPath,QPolygonF
 from PySide6.QtWidgets import QDateEdit,QTableWidgetItem,QPushButton,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QSpinBox
 from .pages import PageBase,OperationPage
 from .upload_page import SendPage
-from .pallet_model import PalletRepository,product_key
+from .pallet_model import PalletRepository
 from .dashboard import WHITE,MUTED,GREEN,RED,YELLOW,BLUE
 from .sidebar_layout import fixed_sidebar,SIDEBAR
 from .settings_model import VERSION
@@ -22,11 +22,13 @@ class PalletPage(OperationPage):
         PageBase.__init__(self,store,'pallet','Agregasi Pallet','PENYUSUNAN CARTON KE PALLET','PALLET')
         self.stage='PALLET';self.cfg=dict(self.CONFIG['PALLET']);self.filled=0;self.run=None;self.repo=None;self.grid_page=0;self.scanning=False;self.cache_count=0
         self.child_codes=[];self.recent_children=[];self.result_rows=[];self.message='Pilih produk, batch dan template untuk memulai pallet.';self.buttons={};self.verification_dialog=None;self.phase=0
-        self.product=self.combo(99,720,235,24,[]);self.product.setObjectName('pallet_product')
-        self.batch=self.combo(99,749,235,24,[store.get('batch')]);self.batch.setEditable(True);self.batch.setObjectName('pallet_batch')
-        self.target_list=self.combo(99,778,235,24,[]);self.target_list.setObjectName('pallet_target_list')
-        self.template_selector=self.combo(99,807,235,24,[]);self.template_selector.setObjectName('pallet_template')
-        self.button('stage_lock',28,838,306,29,'KUNCI PALLET','lock')
+        self.template_selector=self.combo(99,720,235,24,[]);self.template_selector.setObjectName('pallet_template')
+        self.product=self.field(99,749,235,24,'','Produk mengikuti template');self.product.setObjectName('pallet_product');self.product.setReadOnly(True)
+        self.product.setStyleSheet(self.product.styleSheet()+' QLineEdit {color:#bcd8ec;background:#03202f;}')
+        self.batch=self.combo(99,778,235,24,[store.get('batch')]);self.batch.setObjectName('pallet_batch')
+        self.target_list=self.combo(99,807,235,24,[]);self.target_list.setObjectName('pallet_target_list')
+        self.inputs=(self.template_selector,self.batch,self.target_list)
+        self.button('stage_lock',28,838,306,29,'KUNCI DATA','lock')
         self.scan_table=self.table(370,723,338,147,['WAKTU','KODE CARTON','STATUS'],[67,188,75]);self.scan_table.verticalHeader().setDefaultSectionSize(23);self.scan_table.horizontalHeader().setFixedHeight(25)
         self.result_table=self.table(740,723,341,147,['WAKTU','KODE PALLET','STATUS'],[66,186,80]);self.result_table.verticalHeader().setDefaultSectionSize(23);self.result_table.horizontalHeader().setFixedHeight(25)
         self.scan_table.cellDoubleClicked.connect(self.scan_detail);self.result_table.cellDoubleClicked.connect(self.result_detail)
@@ -34,14 +36,13 @@ class PalletPage(OperationPage):
         upload=self.buttons['stage_upload'];upload.setStyleSheet(upload.styleSheet().replace('#076fac','#7844a9').replace('#03426b','#442565').replace('#249bd2','#a678ce'))
         self.mfd=QDateEdit(QDate.currentDate(),self);self.mfd.setDisplayFormat('dd/MM/yyyy');self.mfd.setCalendarPopup(True);self.mfd.setGeometry(65,951,124,29);self.mfd.setStyleSheet('QDateEdit {color:#edf5ff;background:#04283f;border:1px solid #3f6780;padding:3px;}')
         self.scan_input=self.field(240,951,225,29,'','Scan serial carton / Enter');self.scan_input.setMaxLength(500);self.scan_input.setObjectName('pallet_scan_input');self.scan_input.returnPressed.connect(self.scan)
-        self.button('pallet_camera_scan',471,951,35,29,'','camera');self.buttons['pallet_camera_scan'].setToolTip('Baca barcode carton dari kamera')
         for i,name in enumerate(('pallet_targets','pallet_scan_step','pallet_print_step','pallet_verify')):self.hotspot(name,15+i*274,84,258,94)
         self.button('grid_prev',937,199,27,25,'‹','',flat=True);self.button('grid_next',965,199,27,25,'›','',flat=True)
         self.cell_buttons=[]
         for i in range(self.GRID_SIZE):
             row,col=divmod(i,6);b=self.hotspot('pallet_cell_'+str(i),32+col*175,234+row*102,168,96);self.cell_buttons.append(b)
-        self.product.currentIndexChanged.connect(self.product_changed);self.batch.currentTextChanged.connect(self.batch_changed)
-        self.template_selector.currentIndexChanged.connect(self.start_template);self.action.connect(self.local_action)
+        self.batch.currentTextChanged.connect(self.batch_changed)
+        self.template_selector.currentIndexChanged.connect(self.template_changed);self.action.connect(self.local_action)
         self.animation=QTimer(self);self.animation.setInterval(80);self.animation.timeout.connect(self.animate)
     def animate(self):
         if self.scanning and self.isVisible():self.phase=(self.phase+1)%24;self.update(25,229,1060,441)
@@ -70,27 +71,49 @@ class PalletPage(OperationPage):
         for label,data in items:combo.addItem(label,data)
         index=combo.findData(previous);combo.setCurrentIndex(index if index>=0 else 0);combo.blockSignals(False)
 
-    def product_changed(self,*_):
-        if self.run and self.run['state']=='OPEN':return
-        self.run=None;self.refresh_choices();self.refresh()
+    def template_changed(self,*_):
+        if self.run:return
+        self.refresh_choices()
+        self.message='Template dipilih. Pilih batch dan list carton hasil Tahap 2, lalu tekan KUNCI DATA.' if self.template_selector.currentData() else 'Pilih template pallet aktif untuk memulai.'
+        self.update()
 
     def batch_changed(self,*_):
         if self.repo and not (self.run and self.run['state']=='OPEN'):self.refresh_choices()
 
+    def current_document(self):
+        if self.run:return self.run['document']
+        identifier=self.template_selector.currentData()
+        if not identifier:return None
+        try:return self.runtime.repo.get(identifier)['document']
+        except ValueError:return None
+
+    def current_product(self):
+        doc=self.current_document()
+        return self.repo.product_for(doc) if doc else None
+
+    def child_template_id(self):
+        doc=self.current_document()
+        return doc.get('child_template_id') if doc else None
+
     def refresh_choices(self):
         if not self.repo:return
         docs=self.repo.templates()
-        products={product_key(d['product']):d['product'] for d in docs}
-        if self.run:
-            frozen=self.repo.product_for(self.run['document'])
-            if frozen:products[product_key(frozen)]=frozen
-        self.fill_combo(self.product,[(p['name'],p) for p in products.values()])
-        product=self.product.currentData()
-        templates=[('Pilih template pallet…',None)]+[(r['name']+' • '+r['document']['child_level'],r['id']) for r in docs if r['product']==product]
+        templates=[('Pilih template pallet…',None)]+[(r['name']+' • '+r['document']['child_level'],r['id']) for r in docs]
         if self.run and not any(value==self.run['template_id'] for _,value in templates):templates.append((self.run['document']['name']+' • sesi tersimpan',self.run['template_id']))
         self.fill_combo(self.template_selector,templates)
+        doc=self.current_document();product=self.current_product()
+        self.product.setText(product['name'] if product else '');self.product.setCursorPosition(0)
+        # Batches and lists follow the cartons that stage 2 has finished.
+        pending=self.repo.pending_batches(product,self.child_template_id()) if doc else []
+        batches=[self.run['batch']] if self.run else [row['batch'] for row in pending]
+        current=self.batch.currentText();self.batch.blockSignals(True);self.batch.clear();self.batch.addItems(batches)
+        if current in batches:self.batch.setCurrentText(current)
+        self.batch.blockSignals(False)
+        ready=next((row['quantity'] for row in pending if row['batch']==self.batch.currentText()),0)
         lists=self.repo.lists(product,self.batch.currentText())
-        self.fill_combo(self.target_list,[('SEMUA CARTON SIAP / SCAN LANGSUNG',None)]+[(f"{r['name']} | {r['quantity']} carton",r['id']) for r in lists])
+        self.fill_combo(self.target_list,[(f'SEMUA CARTON SIAP TAHAP 2 ({ready} carton)',None)]+[(f"{r['name']} | {r['quantity']} carton",r['id']) for r in lists])
+        locked=bool(self.run)
+        self.batch.setEnabled(not locked);self.target_list.setEnabled(not locked)
 
     def refresh(self):
         if not self.repo:return
@@ -109,13 +132,34 @@ class PalletPage(OperationPage):
         self.grid_page=max(0,min(self.grid_page,math.ceil(self.cfg['capacity']/self.GRID_SIZE)-1))
         self.buttons['grid_prev'].setEnabled(self.grid_page>0);self.buttons['grid_next'].setEnabled((self.grid_page+1)*self.GRID_SIZE<self.cfg['capacity'])
         for name in ('grid_prev','grid_next'):self.buttons[name].setVisible(self.cfg['capacity']>self.GRID_SIZE)
+        self.buttons['stage_lock'].setText('BUKA KUNCI DATA' if self.run else 'KUNCI DATA')
         self.update()
+
+    def toggle_lock(self):
+        if self.run:self.release_session('Data dibuka. Pilih template, batch dan list carton untuk sesi berikutnya.');return
+        if not self.template_selector.currentData():self.notify('Pilih template pallet aktif terlebih dahulu.');return
+        self.start_template()
+
+    def release_session(self,message):
+        if self.run:
+            try:self.runtime.reset_empty(self.run['id'])
+            except ValueError as exc:self.notify(str(exc));return False
+        if hasattr(self,'settings_runtime'):self.settings_runtime.scanner_armed['PALLET']=False
+        self.run=None;self.filled=0;self.child_codes=[];self.grid_page=0;self.scanning=False;self.cfg=dict(self.CONFIG['PALLET'])
+        self.buttons['stage_start_scan'].setText('START SCAN')
+        for widget in self.inputs+(self.mfd,):widget.setEnabled(True)
+        with self.store.db:self.store.put('pallet_current_run',None)
+        self.refresh_choices();self.template_selector.blockSignals(True);self.template_selector.setCurrentIndex(0);self.template_selector.blockSignals(False)
+        self.notify(message);self.refresh();self.changed.emit();return True
 
     def start_template(self,*_):
         if not self.repo:return
         identifier=self.template_selector.currentData()
         if not identifier:
             self.run=None;self.filled=0;self.child_codes=[];self.scanning=False;self.update();return
+        self.refresh_choices()
+        if not self.batch.currentText():
+            self.run=None;self.message='Belum ada carton Tahap 2 yang siap untuk pallet ini. Selesaikan dan cetak label carton terlebih dahulu.';self.update();return
         try:
             self.grid_page=0;self.update_run(self.repo.start(identifier,self.batch.currentText(),self.mfd.text(),self.target_list.currentData()))
             self.scanning=self.run['state']=='OPEN';self.message='Sesi siap. Scan '+self.cfg['child'].lower()+' dengan scanner atau ketik kode lalu Enter.'
@@ -132,17 +176,19 @@ class PalletPage(OperationPage):
         self.scan_input.setPlaceholderText('Scan '+doc['child_level'].lower()+' / Enter')
         self.subtitle='PENYUSUNAN '+doc['child_level']+' KE PALLET'
         self.scan_table.setHorizontalHeaderLabels(['WAKTU','KODE '+doc['child_level'],'STATUS'])
-        self.product.blockSignals(True);self.product.setCurrentIndex(self.product.findData(self.repo.product_for(doc)));self.product.blockSignals(False)
         self.batch.blockSignals(True);self.batch.setCurrentText(run['batch']);self.batch.blockSignals(False)
         self.refresh_choices()
+        product=self.repo.product_for(doc)
+        self.product.setText(product['name'] if product else doc['data'].get('product_name',''));self.product.setCursorPosition(0)
         self.template_selector.blockSignals(True);self.template_selector.setCurrentIndex(self.template_selector.findData(run['template_id']));self.template_selector.blockSignals(False)
         self.target_list.blockSignals(True);self.target_list.setCurrentIndex(max(0,self.target_list.findData(meta.get('list_id'))));self.target_list.blockSignals(False)
         date=QDate.fromString(meta.get('mfd',doc['data']['mfg_date']),'dd/MM/yyyy')
         if date.isValid():self.mfd.setDate(date)
         # Session inputs are a snapshot; reset is the explicit route to another session.
-        for widget in (self.product,self.batch,self.target_list,self.template_selector,self.mfd):widget.setEnabled(False)
+        for widget in self.inputs+(self.mfd,):widget.setEnabled(False)
         if run['state']!='OPEN':self.scanning=False
         self.buttons['stage_start_scan'].setText(('STOP SCAN' if self.scanning else 'START SCAN')+' '+self.cfg['child'])
+        self.buttons['stage_lock'].setText('BUKA KUNCI DATA')
         self.update()
 
     def scan(self):
@@ -178,23 +224,19 @@ class PalletPage(OperationPage):
                 self.settings_runtime.scanner_armed['PALLET']=False
                 self.message='Scan dijeda. Data sesi tetap tersimpan.'
             self.buttons['stage_start_scan'].setText(('STOP SCAN' if self.scanning else 'START SCAN')+' '+self.cfg['child']);self.update()
-        elif name=='stage_lock':
-            if not self.run:self.notify('Pilih template dan scan carton terlebih dahulu.');return
-            try:self.update_run(self.repo.finish(self.run['id']));self.message='Pallet dikunci. Cetak label lalu lakukan verifikasi.';self.refresh();self.changed.emit()
+        elif name=='stage_lock':self.toggle_lock()
+        elif name=='stage_close_pallet':
+            if not self.run:self.notify('Kunci data dan scan carton terlebih dahulu.');return
+            try:
+                self.update_run(self.repo.finish(self.run['id']));self.message='Pallet dikunci. Cetak label lalu lakukan verifikasi.'
+                if self.run['print_state']=='PENDING':self.print_run(automatic=True)
+                self.refresh();self.changed.emit()
             except ValueError as exc:self.notify(str(exc))
         elif name in ('stage_print_label','pallet_print_step'):self.print_run()
-        elif name=='stage_reset':
-            if self.run:
-                try:self.runtime.reset_empty(self.run['id'])
-                except ValueError as exc:self.notify(str(exc));return
-            self.run=None;self.filled=0;self.child_codes=[];self.grid_page=0;self.scanning=False;self.cfg=dict(self.CONFIG["PALLET"]);self.buttons["stage_start_scan"].setText("START SCAN")
-            for widget in (self.product,self.batch,self.target_list,self.template_selector,self.mfd):widget.setEnabled(True)
-            with self.store.db:self.store.put('pallet_current_run',None)
-            self.refresh_choices();self.template_selector.blockSignals(True);self.template_selector.setCurrentIndex(0);self.template_selector.blockSignals(False);self.notify("Pilih target dan template untuk membuka pallet berikutnya.");self.refresh()
+        elif name=='stage_reset':self.release_session('Pilih template, batch dan list carton untuk membuka pallet berikutnya.')
         elif name=='stage_upload':self.settings_runtime.upload(level='PALLET')
         elif name=='pallet_targets':self.show_targets()
         elif name=='pallet_verify':self.verify_dialog(self.run)
-        elif name=='pallet_camera_scan':self.open_camera()
         elif name in ('grid_prev','grid_next'):
             self.grid_page=max(0,min(math.ceil(self.cfg['capacity']/self.GRID_SIZE)-1,self.grid_page+(-1 if name=='grid_prev' else 1)));self.refresh()
         elif name.startswith('pallet_cell_'):
@@ -203,7 +245,13 @@ class PalletPage(OperationPage):
 
     def print_run(self,automatic=False):
         if not self.run:self.notify('Pilih pallet terlebih dahulu.');return
-        if self.run['state']!='COMPLETE':self.notify('Kunci pallet sebelum mencetak label.');return
+        if self.run['state']!='COMPLETE':
+            if automatic:return
+            minimum=self.run['document']['aggregation_min']
+            if self.filled<minimum:self.notify(f'Isi pallet baru {self.filled}; target minimum template {minimum}.');return
+            if MessageBox.question(self,'Kunci pallet',f'Pallet berisi {self.filled} dari {self.cfg["capacity"]} {self.cfg["child"].lower()}. Kunci pallet sekarang lalu cetak label?')!=MessageBox.StandardButton.Yes:return
+            try:self.update_run(self.repo.finish(self.run['id']))
+            except ValueError as exc:self.notify(str(exc));return
         try:self.repo.validate_print(self.run['id'])
         except ValueError as exc:self.notify(str(exc));return
         sent=False
@@ -252,7 +300,8 @@ class PalletPage(OperationPage):
         count=QSpinBox();count.setRange(0,1000000);count.setPrefix('Jumlah '+run['document']['child_level'].lower()+' diperiksa: ');layout.addWidget(count)
         error=QLabel();error.setWordWrap(True);layout.addWidget(error)
         def camera():
-            self.open_camera(dialog)
+            from .settings_dialogs import CameraCalibration
+            cam=CameraCalibration(self.settings_runtime,dialog);cam.start();cam.exec()
         def verify():
             try:self.repo.verify(run['id'],dialog.code.text(),count.value());dialog.accept();self.notify('Verifikasi pallet VALID tersimpan.');self.refresh();self.changed.emit()
             except ValueError as exc:error.setText(str(exc))
@@ -262,16 +311,6 @@ class PalletPage(OperationPage):
         self.verification_dialog=dialog
         try:dialog.exec()
         finally:self.verification_dialog=None
-
-    def open_camera(self,parent=None):
-        from .pallet_camera import PalletCamera
-        dialog=PalletCamera(self.settings_runtime,parent or self)
-        def decoded(code):
-            if self.verification_dialog:self.verification_dialog.code.setText(code)
-            elif self.run and self.scanning:
-                self.scan_input.setText(code);self.scan();dialog.note.setText(self.message)
-            else:dialog.note.setText('Kode terbaca: '+code+'. Pilih sesi dan aktifkan START SCAN untuk agregasi.')
-        dialog.decoded.connect(decoded);dialog.start();dialog.exec()
 
     def show_targets(self):
         dialog=AppDialog(self);dialog.setWindowTitle('Data target carton untuk pallet');dialog.resize(840,570);layout=QVBoxLayout(dialog)
@@ -284,7 +323,7 @@ class PalletPage(OperationPage):
             nonlocal rows
             if self.target_list.currentData():
                 rows=[dict(r) for r in self.store.db.execute("SELECT t.code,COALESCE(r.quantity,0) quantity,CASE WHEN c.code IS NULL THEN 'BELUM SCAN' ELSE 'TERAGREGASI' END state FROM pallet_targets t LEFT JOIN aggregation_runs r ON r.level='CARTON' AND r.parent_code=t.code LEFT JOIN aggregation_children c ON c.child_level='CARTON' AND c.code=t.code WHERE t.list_id=? ORDER BY t.rowid",(self.target_list.currentData(),))]
-            else:rows=self.repo.candidates(self.product.currentData(),self.batch.currentText())
+            else:rows=self.repo.candidates(self.current_product(),self.batch.currentText(),self.child_template_id())
             grid.setRowCount(min(1000,len(rows)))
             for i,r in enumerate(rows[:1000]):
                 item=QTableWidgetItem();item.setFlags(Qt.ItemFlag.ItemIsEnabled|Qt.ItemFlag.ItemIsUserCheckable);item.setCheckState(Qt.CheckState.Unchecked);grid.setItem(i,0,item)
@@ -299,14 +338,14 @@ class PalletPage(OperationPage):
             if not require_idle():return
             codes=[rows[i]['code'] for i in range(grid.rowCount()) if grid.item(i,0).checkState()==Qt.CheckState.Checked]
             try:
-                identifier=self.repo.create_targets(name.text(),codes,self.product.currentData(),self.batch.currentText());self.refresh_choices();self.target_list.setCurrentIndex(self.target_list.findData(identifier));load();self.notify('List target pallet tersimpan.')
+                identifier=self.repo.create_targets(name.text(),codes,self.current_product(),self.batch.currentText());self.refresh_choices();self.target_list.setCurrentIndex(self.target_list.findData(identifier));load();self.notify('List target pallet tersimpan.')
             except ValueError as exc:MessageBox.warning(dialog,'List belum tersimpan',str(exc))
         def import_file():
             if not require_idle():return
             path,_=FileDialog.getOpenFileName(dialog,'Impor target carton','','CSV (*.csv)')
             if path:
                 try:
-                    identifier=self.repo.import_targets(path,self.product.currentData(),self.batch.currentText());self.refresh_choices();self.target_list.setCurrentIndex(self.target_list.findData(identifier));load();self.notify('List target pallet berhasil diimpor.')
+                    identifier=self.repo.import_targets(path,self.current_product(),self.batch.currentText());self.refresh_choices();self.target_list.setCurrentIndex(self.target_list.findData(identifier));load();self.notify('List target pallet berhasil diimpor.')
                 except (ValueError,OSError,csv.Error) as exc:MessageBox.warning(dialog,'Impor gagal',str(exc))
         def export():
             path,_=FileDialog.getSaveFileName(dialog,'Ekspor target carton','target-pallet.csv','CSV (*.csv)')
@@ -314,7 +353,7 @@ class PalletPage(OperationPage):
                 try:
                     with open(path,'w',newline='',encoding='utf-8-sig') as handle:
                         writer=csv.writer(handle);writer.writerow(['code','product','batch'])
-                        for r in rows:writer.writerow([r['code'],self.product.currentText(),self.batch.currentText()])
+                        for r in rows:writer.writerow([r['code'],self.product.text(),self.batch.currentText()])
                     self.notify('Target pallet diekspor.')
                 except OSError as exc:MessageBox.warning(dialog,'Ekspor gagal',str(exc))
         row=QHBoxLayout();layout.addLayout(row)
@@ -364,8 +403,8 @@ class PalletPage(OperationPage):
             for stripe in range(148,755,20):self.p.drawPolygon(QPolygonF([QPointF(stripe,663),QPointF(stripe+8,655),QPointF(stripe+18,655),QPointF(stripe+10,663)]))
             self.p.restore()
         self.text(768,648,214,23,f'{self.filled}/{capacity} {self.cfg["child"]} ({ratio*100:.1f}%)',11);self.text(982,648,101,23,f'CACHE: {self.cache_count}',10,align=Qt.AlignmentFlag.AlignRight)
-        self.panel(15,685,336,202,'PILIH PRODUK / BATCH / LIST DATA');self.panel(357,685,364,202,'DATA '+self.cfg['child']+' TER-SCAN • 5 TERAKHIR');self.panel(727,685,368,202,'HASIL AGREGASI PALLET')
-        for y,label in [(720,'PRODUK'),(749,'BATCH'),(778,'LIST DATA'),(807,'TEMPLATE')]:self.text(28,y,69,24,label,10,MUTED)
+        self.panel(15,685,336,202,'PILIH TEMPLATE / BATCH / LIST DATA');self.panel(357,685,364,202,'DATA '+self.cfg['child']+' TER-SCAN • 5 TERAKHIR');self.panel(727,685,368,202,'HASIL AGREGASI PALLET')
+        for y,label in [(720,'TEMPLATE'),(749,'PRODUK'),(778,'BATCH'),(807,'LIST DATA')]:self.text(28,y,69,24,label,10,MUTED)
         self.text(28,866,306,19,f'● {self.filled}/{capacity} {self.cfg["child"].lower()}   •   CACHE {self.cache_count}   •   '+('READY' if self.scanning else 'SIAP' if self.run else 'PILIH TEMPLATE'),9,GREEN)
         self.panel(15,893,1080,97);self.text(29,908,106,25,'KONTROL LINE',11,WHITE,True);self.text(787,910,128,24,'MODE: '+self.store.get('mode','AGGREGATION'),10,GREEN,True)
         self.text(28,952,35,28,'MFD',11);self.text(198,952,40,28,'SCAN',10);self.text(514,948,567,36,self.message,10,GREEN if self.message.startswith(('VALID','Sesi siap','Verifikasi')) else YELLOW,wrap=True)

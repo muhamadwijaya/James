@@ -33,7 +33,7 @@ class SettingsRuntime(QObject):
         self.manager = QNetworkAccessManager(self)
         self.replies = set(); self.sockets = set(); self.stopped = False
         self.scanner_ports={};self.scanner_buffers={};self.scanner_armed={}
-        self.scanner_cameras={};self.scanner_camera_codes={};self.scanner_camera_busy={}
+        self.scanner_cameras={};self.scanner_camera_codes={};self.scanner_camera_busy={};self.scanner_camera_active=set()
         self.uploading = False; self.paused = False; self.conveyor_running = False
         with self.store.db:
             self.store.db.execute("UPDATE delivery_ledger SET status='FAILED',detail='Sesi sebelumnya berakhir sebelum konfirmasi server.' WHERE status='SENDING'")
@@ -77,7 +77,7 @@ class SettingsRuntime(QObject):
             ready = info and info.state() in (QPrinter.PrinterState.Idle, QPrinter.PrinterState.Active)
             state = 'DRIVER SIAP' if ready else 'PERIKSA DRIVER' if info else 'BELUM DITES' if device.startswith('tcp://') else 'TIDAK TERDETEKSI'
             self.set_status('printer_'+level, state, device)
-        for level in ('BOX','CARTON'):
+        for level in LEVELS:
             profile = cfg['scanners'][level]
             if profile.get('mode') == 'KAMERA IP':
                 try:
@@ -94,7 +94,7 @@ class SettingsRuntime(QObject):
         with self.store.db:
             devices = self.store.get('devices', {})
             devices.update(database=True, printer=any(self.status['printer_'+x]['status']=='DRIVER SIAP' for x in LEVELS),
-                           scanner=any(self.status['scanner_'+x]['status'] in ('TERDETEKSI','KAMERA DIATUR','KAMERA ONLINE') for x in ('BOX','CARTON')),
+                           scanner=any(self.status['scanner_'+x]['status'] in ('TERDETEKSI','KAMERA DIATUR','KAMERA ONLINE') for x in LEVELS),
                            camera=self.status['camera']['status']=='ONLINE', conveyor=self.conveyor_running)
             self.store.put('devices', devices)
 
@@ -263,24 +263,27 @@ class SettingsRuntime(QObject):
         if timer is None:
             timer=QTimer(self);timer.setInterval(1500)
             timer.timeout.connect(lambda key=level:self.poll_scanner_camera(key));self.scanner_cameras[level]=timer
-        timer.start();self.set_status('scanner_'+level,'KAMERA MENUNGGU',url)
+        self.scanner_camera_active.add(level);timer.start();self.set_status('scanner_'+level,'KAMERA MENUNGGU',url)
         self.poll_scanner_camera(level)
         return 'Kamera scanner '+url+' aktif. Arahkan barcode unit ke kamera.'
 
     def stop_scanner_camera(self,level):
         timer=self.scanner_cameras.get(level)
         if timer is not None:timer.stop()
+        self.scanner_camera_active.discard(level)
         self.scanner_camera_codes.pop(level,None);self.scanner_camera_busy.pop(level,None)
 
     def poll_scanner_camera(self,level):
         """Fetch one frame and forward a single decoded barcode to the stage page."""
-        if self.stopped or self.scanner_camera_busy.get(level):return
+        if self.stopped or level not in self.scanner_camera_active or self.scanner_camera_busy.get(level):return
         try:url=self.scanner_camera_url(level)
         except ValueError as exc:
             self.stop_scanner_camera(level);self.set_status('scanner_'+level,'PERIKSA ALAMAT',str(exc));self.message.emit(str(exc));return
         self.scanner_camera_busy[level]=True
         def result(code,body,error):
             self.scanner_camera_busy.pop(level,None)
+            # A frame that lands after the camera was stopped is not a scan.
+            if level not in self.scanner_camera_active:return
             image=QImage.fromData(body)
             if not 200<=code<300 or error or image.isNull():
                 self.set_status('scanner_'+level,'GAGAL',error or f'HTTP {code}: kamera belum mengirim gambar.');return

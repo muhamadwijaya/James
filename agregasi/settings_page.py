@@ -19,6 +19,7 @@ from .settings_model import defaults, VERSION, LEVELS, SCAN_MODES
 # Device rows share one 28 px grid so scanner and camera columns stay aligned.
 SCANNER_ROWS=tuple(525+i*28 for i in range(9))
 CAMERA_ROWS=tuple(525+i*28 for i in range(6))
+SCANNER_COLUMNS=(('BOX',110),('CARTON',224),('PALLET',338))
 from .settings_runtime import SettingsRuntime
 from .settings_dialogs import UserEditor, ScannerCalibration, CameraCalibration
 
@@ -33,7 +34,7 @@ TRANSLATIONS = {
  'SYNC INTERVAL (DETIK)':'SYNC INTERVAL (SECONDS)','TEST KONEKSI TERAKHIR':'LAST CONNECTION TEST',
  'STATUS KONEKSI':'CONNECTION STATUS','TEST KONEKSI SEKARANG':'TEST CONNECTION NOW',
  'TEST PRINT SEMUA PRINTER':'TEST PRINT ALL PRINTERS','UKURAN LABEL':'LABEL SIZE',
- 'KAMERA PALLET':'PALLET CAMERA','KONEKSI (COM)':'CONNECTION (COM)','KONEKSI (IP / URL)':'CONNECTION (IP / URL)',
+ 'KAMERA VERIFIKASI':'VERIFICATION CAMERA','KONEKSI (COM)':'CONNECTION (COM)','ALAMAT':'ADDRESS','FOKUS':'FOCUS','DEVICE':'DEVICE',
  'MODE SCAN':'SCAN MODE','IP KAMERA':'CAMERA IP','PORT KAMERA':'CAMERA PORT','STATUS':'STATUS',
  'RESOLUSI':'RESOLUTION','KALIBRASI SCANNER':'CALIBRATE SCANNER','KALIBRASI KAMERA':'CALIBRATE CAMERA',
  'TAMBAH USER':'ADD USER','EDIT ROLE':'EDIT ROLE','BACKUP OTOMATIS':'AUTO BACKUP',
@@ -193,29 +194,32 @@ class SettingsPage(PageBase):
 
     def build_devices(self):
         ports=[p.portName() for p in QSerialPortInfo.availablePorts()]
-        for level,x in [('BOX',110),('CARTON',224)]:
+        for level,x in SCANNER_COLUMNS:
             key='scanners.'+level+'.';ref=defaults()['scanners'][level];y=SCANNER_ROWS
             self.control(key+'device',x,y[0],105)
-            mode=self.control(key+'mode',x,y[1],105,'combo',list(SCAN_MODES))
-            mode.setToolTip('SCANNER GUN membaca dari port COM/keyboard. KAMERA IP membaca barcode dari snapshot kamera jaringan.')
-            setattr(self,'scan_mode_'+level.lower(),mode)
+            if level!='PALLET':
+                # PALLET reads with a scanner gun only, so it has no camera rows.
+                mode=self.control(key+'mode',x,y[1],105,'combo',list(SCAN_MODES))
+                mode.setToolTip('SCANNER GUN membaca dari port COM/keyboard. KAMERA IP membaca barcode dari snapshot kamera jaringan.')
+                setattr(self,'scan_mode_'+level.lower(),mode)
             widget=self.control(key+'port',x,y[2],105,'editable',list(dict.fromkeys([ref['port'],'KEYBOARD']+ports)))
             setattr(self,'scanner_'+level.lower(),widget)
-            self.control(key+'camera_ip',x,y[3],105).setToolTip('IP atau http://IP kamera scanner. Path opsional, contoh 192.168.10.31/snapshot.jpg.')
-            self.control(key+'camera_port',x,y[4],105,'int',minimum=1,maximum=65535).setToolTip('Port HTTP kamera scanner, contoh 8080.')
+            if level!='PALLET':
+                self.control(key+'camera_ip',x,y[3],105).setToolTip('IP atau http://IP kamera scanner. Path opsional, contoh 192.168.10.31/snapshot.jpg.')
+                self.control(key+'camera_port',x,y[4],105,'int',minimum=1,maximum=65535).setToolTip('Port HTTP kamera scanner, contoh 8080.')
             self.control(key+'trigger',x,y[5],105,'combo',['AUTO','MANUAL'])
             self.control(key+'autofocus',x,y[6],105,'toggle')
             self.control(key+'exposure',x,y[7],105,'int',minimum=1,maximum=10000).setSuffix(' ms')
             self.control(key+'resolution',x,y[8],105,'combo',['640 x 480','1280 x 720','1920 x 1080'])
         y=CAMERA_ROWS
-        self.control('camera.device',443,y[0],169)
-        self.camera_ip=self.control('camera.address',443,y[1],169)
+        self.control('camera.device',515,y[0],97)
+        self.camera_ip=self.control('camera.address',515,y[1],97)
         self.camera_ip.setToolTip('Alamat IP/URL snapshot atau ID kamera USB. Pilih perangkat melalui Kalibrasi Kamera.')
-        self.control('camera.trigger',443,y[2],169,'combo',['AUTO','MANUAL'])
-        self.control('camera.autofocus',443,y[3],169,'toggle')
-        self.control('camera.exposure',443,y[4],169,'int',minimum=1,maximum=10000).setSuffix(' ms')
-        self.control('camera.resolution',443,y[5],169,'combo',['640 x 480','1280 x 720','1920 x 1080'])
-        self.camera_preview=QLabel(self);self.camera_preview.setGeometry(443,700,169,145);self.camera_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.control('camera.trigger',515,y[2],97,'combo',['AUTO','MANUAL'])
+        self.control('camera.autofocus',515,y[3],97,'toggle')
+        self.control('camera.exposure',515,y[4],97,'int',minimum=1,maximum=10000).setSuffix(' ms')
+        self.control('camera.resolution',515,y[5],97,'combo',['640 x 480','1280 x 720','1920 x 1080'])
+        self.camera_preview=QLabel(self);self.camera_preview.setGeometry(452,700,160,145);self.camera_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.button('calibrate_scanner',26,859,301,31,'KALIBRASI SCANNER',icon='scanner')
         self.button('calibrate_camera',349,859,263,31,'KALIBRASI KAMERA',icon='camera')
 
@@ -416,16 +420,15 @@ class SettingsPage(PageBase):
         for level,x,color in [('BOX',790,BLUE),('CARTON',894,GREEN),('PALLET',998,'#b985ef')]:self.text(x,126,98,24,level,11,color,True,Qt.AlignmentFlag.AlignCenter)
         for key,y in [('PRINTER DEVICE',155),('DPI',190),('DARKNESS',225),('PRINT SPEED',260),('UKURAN LABEL',295)]:self.text(714,y,73,27,key,10,MUTED,wrap=True)
         self.text(716,332,377,32,'ZPL TCP: darkness & speed • Driver OS: preferensi printer',10,MUTED,wrap=True)
-        for x,w,label,color in [(110,105,'BOX','#086fb3'),(224,105,'CARTON','#087c48'),(345,268,'KAMERA PALLET','#553878')]:self.rect(x,499,w,22,color,color,color,2);self.text(x,499,w,22,label,10,WHITE,True,Qt.AlignmentFlag.AlignCenter)
+        for x,w,label,color in [(110,105,'BOX','#086fb3'),(224,105,'CARTON','#087c48'),(338,105,'PALLET','#0a6a8f'),(452,160,'KAMERA VERIFIKASI','#553878')]:self.rect(x,499,w,22,color,color,color,2);self.text(x,499,w,22,label,10,WHITE,True,Qt.AlignmentFlag.AlignCenter)
         for label,y in zip(('DEVICE NAME','MODE SCAN','KONEKSI (COM)','IP KAMERA','PORT KAMERA','TRIGGER MODE','AUTOFOCUS','EXPOSURE','RESOLUSI'),SCANNER_ROWS):self.text(28,y,80,27,label,10,MUTED)
         self.text(28,782,80,27,'STATUS',10,MUTED)
-        for label,y in zip(('DEVICE NAME','KONEKSI (IP / URL)','TRIGGER MODE','AUTOFOCUS','EXPOSURE','RESOLUSI'),CAMERA_ROWS):self.text(349,y,91,27,label,10,MUTED)
-        self.text(349,700,91,27,'PREVIEW',10,MUTED)
-        for level,x in [('BOX',110),('CARTON',224)]:
+        for label,y in zip(('DEVICE','ALAMAT','TRIGGER','FOKUS','EXPOSURE','RESOLUSI'),CAMERA_ROWS):self.text(452,y,60,27,label,9,MUTED)
+        for level,x in SCANNER_COLUMNS:
             self.rect(x,782,105,63,'#112936','#041d2c','#426176');self.icon('scanner',x+42,787,21)
             value=self.runtime.status.get('scanner_'+level,{}).get('status','BELUM DITES');self.text(x+4,810,97,32,value,9,MUTED,align=Qt.AlignmentFlag.AlignCenter,wrap=True)
-        self.rect(443,700,169,145,'#112936','#041d2c','#426176')
-        if self.camera_preview.pixmap().isNull():self.icon('camera',500,745,46)
+        self.rect(452,700,160,145,'#112936','#041d2c','#426176')
+        if self.camera_preview.pixmap().isNull():self.icon('camera',505,745,46)
         for title,y in [('BACKUP OTOMATIS',730),('SIMPAN BACKUP',758),('RESTORE KONFIGURASI',787),('BERSIHKAN FILE TEMP',813),('EXPORT LOG SISTEM',839),('VERSI SISTEM',862),('CEK UPDATE',882)]:self.text(652,y,132,24,title,10,MUTED)
         self.text(910,758,40,27,'hari',10,MUTED);self.text(786,862,115,21,'v'+VERSION,11)
         self.text(917,857,175,45,self.runtime.last_update,9,GREEN if 'terbaru' in self.runtime.last_update else MUTED,wrap=True)

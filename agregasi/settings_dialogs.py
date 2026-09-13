@@ -36,9 +36,9 @@ class UserEditor(AppDialog):
 class ScannerCalibration(AppDialog):
     def __init__(self,runtime,parent=None):
         super().__init__(parent); self.runtime=runtime; self.serial=QSerialPort(self); self.buffer=bytearray(); self.armed=False
-        self.setWindowTitle('Kalibrasi scanner BOX / CARTON'); self.resize(680,510)
+        self.setWindowTitle('Kalibrasi scanner BOX / CARTON / PALLET'); self.resize(680,510)
         layout=QVBoxLayout(self); form=QFormLayout()
-        self.level=ThemedComboBox();self.level.addItems(['BOX','CARTON'])
+        self.level=ThemedComboBox();self.level.addItems(['BOX','CARTON','PALLET'])
         self.port=ThemedComboBox();self.port.setEditable(True)
         self.port.addItems(['KEYBOARD']+[p.portName() for p in QSerialPortInfo.availablePorts()])
         self.baud=ThemedComboBox();self.baud.addItems(['9600','19200','38400','57600','115200'])

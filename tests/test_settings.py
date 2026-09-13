@@ -116,7 +116,8 @@ class SettingsTests(unittest.TestCase):
 
     def test_controls_buttons_and_theme(self):
         self.page=SettingsPage(self.store)
-        self.assertEqual(len(self.page.controls),59)
+        self.assertEqual(len(self.page.controls),65)
+        self.assertIn('scanners.PALLET.port',self.page.controls);self.assertNotIn('scanners.PALLET.mode',self.page.controls)
         for name in ('test_connection','test_print_all','calibrate_scanner','calibrate_camera','add_user','edit_user','backup_now','restore_config','export_config','clear_temp','export_log','check_update','save_settings','reload_settings','reset_settings','test_devices','reveal_token'):
             self.assertTrue(self.page.buttons[name].isEnabled(),name)
         self.page.controls['language'].setCurrentText('ENGLISH');self.page.controls['theme'].setCurrentText('HIGH CONTRAST')
@@ -152,6 +153,15 @@ class SettingsTests(unittest.TestCase):
             broken['scanners']['BOX'][key]=value
             with self.assertRaises(ValueError):self.repo.save(broken)
         self.assertEqual(self.repo.load()['scanners']['BOX']['mode'],'SCANNER GUN')
+
+    def test_pallet_scanner_is_gun_only(self):
+        cfg=defaults()
+        self.assertEqual(cfg['scanners']['PALLET']['mode'],'SCANNER GUN')
+        self.assertEqual(sorted(cfg['scanners']),['BOX','CARTON','PALLET'])
+        cfg['scanners']['PALLET']['mode']='KAMERA IP'
+        with self.assertRaisesRegex(ValueError,'PALLET'):self.repo.save(cfg)
+        self.runtime=SettingsRuntime(self.store)
+        self.assertIn('scanner_PALLET',self.runtime.status)
 
     def test_camera_scanner_streams_frames_and_never_invents_a_scan(self):
         frame=QImage(96,64,QImage.Format.Format_RGB32);frame.fill(Qt.GlobalColor.white)
