@@ -86,6 +86,13 @@ $rxRisk = [regex]::new('(?<=^|,)(0\d+|\d[\d.]{15,})(?=,|$)', 'Compiled')
 # Lama menunggu data per putaran (mikrodetik). 20000us = 20ms: cukup
 # responsif untuk tombol, dan Poll tetap bangun seketika saat data tiba.
 $pollUs = 20000
+
+# Klep pengaman ukuran buffer (byte) untuk server TANPA pemisah. Kalau data
+# mengalir tanpa jeda sama sekali, socket tak pernah kosong sehingga batas
+# record dari timing tak pernah muncul; buffer dipaksa ditulis di ukuran ini
+# supaya data tidak menumpuk di memori. Untuk kasus itu, set $RecordLength
+# agar pemisahan tetap tepat.
+$capB = 32768
 $conOut  = [Console]::Out
 
 # Lebar console (untuk memotong baris status agar tidak wrap)
@@ -220,8 +227,28 @@ function Close-Session([bool]$final) {
     $carried = $false
 
     if ($rem.Trim().Length -gt 0) {
-        if (-not $sawNL) {
-            # server tanpa pemisah: sisa ini record utuh
+        if (-not $sawNL -and $recLen -gt 0) {
+            # MODE PANJANG TETAP: tulis hanya record yang LENGKAP.
+            # Sisa yang kurang dari 1 record adalah record belum utuh -> tidak
+            # ditulis (menulis nilai terpotong lebih berbahaya daripada tidak
+            # menulisnya, karena kelihatan valid padahal salah).
+            $k = [int][Math]::Floor($rem.Length / $recLen)
+            for ($i = 0; $i -lt $k; $i++) {
+                $piece = $rem.Substring($i * $recLen, $recLen)
+                $o = $piece
+                if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
+                $writer.WriteLine($o)
+                $script:count  = $count + 1
+                $script:latest = $piece
+            }
+            $left = $rem.Length - ($k * $recLen)
+            if ($left -gt 0) {
+                Write-Host ("`n[PERINGATAN] {0} karakter terakhir belum menjadi record lengkap dan TIDAK ditulis." -f $left) -ForegroundColor Yellow
+            }
+            [void]$partial.Clear()
+        }
+        elseif (-not $sawNL) {
+            # panjang record tidak tetap: sisa ini dianggap 1 record utuh
             $o = $rem.Trim()
             if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
             $writer.WriteLine($o)
@@ -337,6 +364,7 @@ try {
     $recLen     = $RecordLength
     $learnChunk = New-Object 'System.Collections.Generic.List[string]'
     $learnMs    = [Diagnostics.Stopwatch]::StartNew()
+    $learnDone  = $false
     $showSw   = [Diagnostics.Stopwatch]::StartNew()
 
     Show-NamePrompt
@@ -452,11 +480,10 @@ try {
             }
             elseif (-not $sawNL) {
                 # =========== Framing B: server TIDAK pakai newline ===========
-                # Tanpa pemisah, batas record TIDAK ada di dalam data. Kalau
-                # hanya mengandalkan timing, sekali proses tersendat (GC, flush
-                # disk, repaint layar) dua record sudah menumpuk di buffer dan
-                # terbaca jadi satu. Karena itu: begitu panjang record diketahui
-                # tetap, pemisahan dilakukan per-panjang (deterministik).
+                # Tanpa pemisah, batas record TIDAK ada di dalam data. Timing
+                # saja tidak cukup: sekali proses tersendat, dua record sudah
+                # menumpuk dan batasnya hilang. Jadi begitu panjang record
+                # diketahui tetap, pemisahan memakai panjang (deterministik).
                 $emit = $null
 
                 if ($recLen -gt 0) {
@@ -471,67 +498,93 @@ try {
                         [void]$partial.Append($s.Substring($k * $recLen))
                     }
                 }
-                elseif (-not $stream.DataAvailable) {
+                elseif ($learnDone) {
+                    # ---- panjang TIDAK tetap: batas record hanya dari timing ----
+                    # $capB = klep pengaman: kalau data mengalir terus tanpa
+                    # jeda, socket tidak pernah kosong, jadi batas dari timing
+                    # tidak pernah muncul. Tanpa klep ini buffer numpuk terus
+                    # dan tidak ada yang tertulis.
+                    if ((-not $stream.DataAvailable -or $s.Length -ge $capB) -and $s.Length -gt 0) {
+                        [void]$partial.Clear()
+                        $emit = New-Object 'System.Collections.Generic.List[string]'
+                        [void]$emit.Add($s)
+                    }
+                }
+                elseif ((-not $stream.DataAvailable) -or ($s.Length -ge $capB)) {
                     # ---- MODE BELAJAR ----
-                    # Batas sementara dari timing. Data ditahan sebentar (maks
-                    # ~200ms) supaya kalau ternyata panjangnya tetap, potongan
-                    # yang menumpuk bisa dibelah ulang dengan benar SEBELUM
-                    # ditulis - jadi tidak ada baris numpuk di file.
-                    $chunk = $s.Trim()
+                    # Batas sementara dari timing, TAPI data ditahan dulu (maks
+                    # ~300ms). Kalau ternyata panjangnya tetap, potongan yang
+                    # sudah menumpuk dibelah ulang dengan benar SEBELUM ditulis,
+                    # jadi tidak ada baris numpuk di file - termasuk baris awal.
+                    # Catatan: TIDAK di-Trim, supaya byte & perataan tetap utuh.
+                    if ($s.Length -gt 0) { [void]$learnChunk.Add($s) }
                     [void]$partial.Clear()
-                    if ($chunk.Length -gt 0) { [void]$learnChunk.Add($chunk) }
 
                     $decide = $false
                     if ($learnChunk.Count -ge 12) { $decide = $true }
-                    elseif ($learnMs.ElapsedMilliseconds -ge 200) {
-                        if ($learnChunk.Count -ge 3) { $decide = $true }
+                    elseif ($learnMs.ElapsedMilliseconds -ge 300) {
+                        if ($learnChunk.Count -ge 4) { $decide = $true }
                         elseif ($learnChunk.Count -gt 0) {
                             # server lambat -> tidak ada risiko numpuk,
                             # tulis apa adanya biar tetap realtime
                             $emit = New-Object 'System.Collections.Generic.List[string]'
                             foreach ($c in $learnChunk) { [void]$emit.Add($c) }
-                            $learnChunk.Clear()
-                            $learnMs.Restart()
+                            $learnChunk.Clear(); $learnMs.Restart()
                         }
                         else { $learnMs.Restart() }
                     }
 
                     if ($decide) {
-                        # Record terpendek = 1 record utuh; yang menumpuk selalu
-                        # kelipatannya. Kalau semua kelipatan -> panjang tetap.
-                        $L = [int]::MaxValue
-                        foreach ($c in $learnChunk) { if ($c.Length -lt $L) { $L = $c.Length } }
-
-                        # Syarat kunci panjang tetap (sengaja ketat, supaya data
-                        # yang panjangnya memang bervariasi TIDAK ikut dibelah):
-                        #  1. semua chunk kelipatan pas dari $L
-                        #  2. mayoritas (>=60%) chunk panjangnya TEPAT $L
-                        # Data bervariasi spt 10/20/30 char gagal di syarat 2,
-                        # jadi tidak akan salah dibelah.
-                        $exact = 0
-                        foreach ($c in $learnChunk) { if ($c.Length -eq $L) { $exact++ } }
-                        $isFixed = ($L -gt 0) -and (($exact * 100) -ge ($learnChunk.Count * 60))
-                        if ($isFixed) {
-                            foreach ($c in $learnChunk) {
-                                if (($c.Length % $L) -ne 0) { $isFixed = $false; break }
+                        # Panjang record = panjang yang PALING SERING muncul
+                        # (modus), BUKAN yang terpendek: potongan tidak lengkap
+                        # akibat koneksi masuk di tengah stream tidak boleh
+                        # dianggap sebagai panjang record.
+                        $freq = @{}
+                        foreach ($c in $learnChunk) { $freq[$c.Length] = 1 + [int]$freq[$c.Length] }
+                        $L = [int]::MaxValue; $best = 0
+                        foreach ($kv in $freq.GetEnumerator()) {
+                            if ($kv.Value -gt $best -or ($kv.Value -eq $best -and $kv.Key -lt $L)) {
+                                $best = $kv.Value; $L = $kv.Key
                             }
                         }
+                        $mult = 0
+                        foreach ($c in $learnChunk) { if (($c.Length % $L) -eq 0) { $mult++ } }
+
+                        # Syarat sengaja ketat, supaya data yang panjangnya
+                        # memang bervariasi TIDAK ikut dibelah:
+                        #   >=60% chunk panjangnya TEPAT $L, dan
+                        #   >=80% chunk kelipatan pas dari $L
+                        $isFixed = ($L -gt 0) -and
+                                   (($best * 100) -ge ($learnChunk.Count * 60)) -and
+                                   (($mult * 100) -ge ($learnChunk.Count * 80))
 
                         $emit = New-Object 'System.Collections.Generic.List[string]'
                         if ($isFixed) {
                             $recLen = $L
-                            foreach ($c in $learnChunk) {
-                                for ($i = 0; $i -lt $c.Length; $i += $L) {
-                                    [void]$emit.Add($c.Substring($i, $L))
-                                }
+                            # Chunk berurutan = potongan stream yang bersambung,
+                            # jadi gabung semua lalu belah per $L. Sisa di DEPAN
+                            # (r) adalah record tidak lengkap karena koneksi
+                            # masuk di tengah record - tidak bisa dilengkapi.
+                            $all = -join $learnChunk
+                            $r   = $learnChunk[0].Length % $L
+                            if ($r -gt 0) {
+                                Write-Host ("`n[INFO] {0} karakter pertama dibuang: record tidak lengkap (koneksi masuk di tengah record)." -f $r) -ForegroundColor DarkGray
                             }
-                            Write-Host ("`n[INFO] Data tanpa pemisah: panjang record TETAP {0} karakter terdeteksi -> pemisahan deterministik, tidak akan menumpuk lagi." -f $L) -ForegroundColor DarkGray
+                            $rest = $all.Substring($r)
+                            $k2   = [int][Math]::Floor($rest.Length / $L)
+                            for ($i = 0; $i -lt $k2; $i++) {
+                                [void]$emit.Add($rest.Substring($i * $L, $L))
+                            }
+                            [void]$partial.Clear()
+                            [void]$partial.Append($rest.Substring($k2 * $L))
+                            Write-Host ("[INFO] Data tanpa pemisah: panjang record TETAP {0} karakter -> pemisahan deterministik, tidak akan menumpuk lagi." -f $L) -ForegroundColor DarkGray
                         }
                         else {
                             foreach ($c in $learnChunk) { [void]$emit.Add($c) }
                             Write-Host "`n[PERINGATAN] Data tanpa pemisah dan panjangnya TIDAK tetap. Batas record hanya bisa dari timing, jadi saat data sangat cepat masih mungkin menumpuk. Solusi pasti: minta server mengirim newline, atau set `$RecordLength di script." -ForegroundColor Yellow
                         }
                         $learnChunk.Clear()
+                        $learnDone = $true
                     }
                 }
 
