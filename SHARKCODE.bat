@@ -49,6 +49,28 @@ exit /b
 $enc     = New-Object System.Text.UTF8Encoding($false)   # UTF-8 tanpa BOM
 $buffer  = New-Object byte[] 65536
 $nlChars = [char[]]@("`r", "`n")
+
+# ------------------------------------------------------------
+#  PROTEKSI EXCEL
+#  File CSV selalu berisi nilai APA ADANYA dari server. Masalahnya
+#  Excel meng-auto-convert angka panjang saat file CSV dibuka:
+#    79381287487778932187877414214  ->  7.93813E+28
+#  dan Excel hanya menyimpan 15 digit signifikan, sisanya jadi 0
+#  (nilai RUSAK PERMANEN kalau file lalu di-save dari Excel).
+#
+#  $ExcelSafe = $true  -> kolom yang berbahaya ditulis sebagai ="..."
+#                         supaya Excel menampilkannya PERSIS sebagai teks.
+#                         Kolom pendek/biasa tidak diubah.
+#  $ExcelSafe = $false -> file 100% byte-asli (pakai ini kalau CSV-nya
+#                         dibaca program lain, bukan Excel).
+# ------------------------------------------------------------
+$ExcelSafe = $true
+
+# Cocokkan 1 kolom penuh yang akan dirusak Excel:
+#   - angka >= 16 digit          (presisi hilang)
+#   - angka berawalan 0          (nol di depan dihapus Excel)
+#   - angka/desimal sangat panjang
+$rxRisk = [regex]::new('(?<=^|,)(0\d+|\d[\d.]{15,})(?=,|$)', 'Compiled')
 $conOut  = [Console]::Out
 
 # Lebar console (untuk memotong baris status agar tidak wrap)
@@ -148,15 +170,44 @@ function Show-Live {
     $script:liveLine = $true
 }
 
-# Tutup file sesi ini: tulis sisa data, flush, close, lapor
-function Close-Session {
-    $rem = $partial.ToString().Trim()
-    if ($rem.Length -gt 0) {
-        $writer.WriteLine($rem)
-        $script:count  = $count + 1
-        $script:latest = $rem
+# Tutup file sesi ini: flush, close, lapor.
+#  $final = $true  -> program berakhir (server menutup koneksi)
+#  $final = $false -> sekedar ganti file (perintah 'x')
+#
+# Penanganan sisa data yang BELUM lengkap (belum ketemu newline):
+#  - server pakai newline + ganti file -> potongan DIBAWA ke file berikutnya
+#    supaya record tetap utuh (tidak ditulis terpotong di file ini)
+#  - server pakai newline + program berakhir -> potongan TIDAK ditulis,
+#    hanya diberitahukan; menulis angka terpotong lebih berbahaya daripada
+#    tidak menulisnya (kelihatan valid padahal nilainya salah)
+#  - server TANPA newline -> sisa itu memang 1 record utuh, jadi ditulis
+function Close-Session([bool]$final) {
+    $rem     = $partial.ToString()
+    $carried = $false
+
+    if ($rem.Trim().Length -gt 0) {
+        if (-not $sawNL) {
+            # server tanpa pemisah: sisa ini record utuh
+            $o = $rem.Trim()
+            if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
+            $writer.WriteLine($o)
+            $script:count  = $count + 1
+            $script:latest = $rem.Trim()
+            [void]$partial.Clear()
+        }
+        elseif ($final) {
+            Write-Host ("`n[PERINGATAN] Potongan data terakhir belum lengkap dan TIDAK ditulis (agar tidak ada nilai terpotong di CSV): {0}" -f $rem.Trim()) -ForegroundColor Yellow
+            [void]$partial.Clear()
+        }
+        else {
+            # dibawa ke file berikutnya -> $partial sengaja TIDAK dibersihkan
+            $carried = $true
+        }
     }
-    [void]$partial.Clear()
+    else {
+        [void]$partial.Clear()
+    }
+
     $writer.Flush()
     $writer.Close()
     $script:writer = $null
@@ -171,6 +222,9 @@ function Close-Session {
     }
     Write-Host ""
     Write-Host ("[OK] File ditutup : {0}  (total {1} baris data)" -f $fileName, $count) -ForegroundColor Green
+    if ($carried) {
+        Write-Host "[INFO] Potongan record terakhir dibawa ke file berikutnya agar tetap utuh." -ForegroundColor DarkGray
+    }
 }
 
 $client       = $null
@@ -284,7 +338,9 @@ try {
                         # record yang masuk saat mengetik nama -> tulis sekarang
                         if ($pending.Count -gt 0) {
                             foreach ($r in $pending) {
-                                $writer.WriteLine($r); $count++; $latest = $r
+                                $o = $r
+                                if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
+                                $writer.WriteLine($o); $count++; $latest = $r
                             }
                             $pending.Clear()
                             $writer.Flush()
@@ -309,7 +365,7 @@ try {
             else {
                 # mode REC: 'x' = akhiri file ini, minta nama baru
                 if ($k.KeyChar -eq 'x' -or $k.KeyChar -eq 'X') {
-                    Close-Session
+                    Close-Session $false
                     $mode      = 'NAME'
                     $skipEnter = $true           # buang Enter yang mengikuti 'x'
                     [void]$nameBuf.Clear()
@@ -342,7 +398,9 @@ try {
                 foreach ($line in ($complete -split '[\r\n]+')) {
                     if ($line.Length -eq 0) { continue }
                     if ($writer) {
-                        $writer.WriteLine($line); $count++; $latest = $line; $wrote = $true
+                        $o = $line
+                        if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
+                        $writer.WriteLine($o); $count++; $latest = $line; $wrote = $true
                     } else {
                         $pending.Add($line)
                     }
@@ -357,7 +415,9 @@ try {
                 [void]$partial.Clear()
                 if ($rec.Length -gt 0) {
                     if ($writer) {
-                        $writer.WriteLine($rec); $count++; $latest = $rec; $wrote = $true
+                        $o = $rec
+                        if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
+                        $writer.WriteLine($o); $count++; $latest = $rec; $wrote = $true
                     } else {
                         $pending.Add($rec)
                     }
@@ -385,7 +445,7 @@ try {
     }
 
     # ---------------- Server menutup koneksi ----------------
-    if ($writer) { Close-Session }
+    if ($writer) { Close-Session $true }
     if ($serverClosed) {
         Write-Host "[INFO] Server menutup koneksi. Program selesai." -ForegroundColor Yellow
     }
