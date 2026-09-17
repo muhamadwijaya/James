@@ -66,11 +66,26 @@ $nlChars = [char[]]@("`r", "`n")
 # ------------------------------------------------------------
 $ExcelSafe = $true
 
+# ------------------------------------------------------------
+#  PANJANG RECORD (hanya untuk server yang TIDAK mengirim newline)
+#  Tanpa pemisah, batas antar-record tidak ada di dalam data, jadi
+#  satu-satunya cara yang 100% pasti adalah panjang record yang tetap.
+#    0  = deteksi otomatis (script belajar dari data yang masuk)
+#    29 = misal record Anda selalu 29 karakter -> langsung pasti sejak
+#         record pertama, tanpa fase belajar
+#  Server yang mengirim newline tidak terpengaruh setelan ini.
+# ------------------------------------------------------------
+$RecordLength = 0
+
 # Cocokkan 1 kolom penuh yang akan dirusak Excel:
 #   - angka >= 16 digit          (presisi hilang)
 #   - angka berawalan 0          (nol di depan dihapus Excel)
 #   - angka/desimal sangat panjang
 $rxRisk = [regex]::new('(?<=^|,)(0\d+|\d[\d.]{15,})(?=,|$)', 'Compiled')
+
+# Lama menunggu data per putaran (mikrodetik). 20000us = 20ms: cukup
+# responsif untuk tombol, dan Poll tetap bangun seketika saat data tiba.
+$pollUs = 20000
 $conOut  = [Console]::Out
 
 # Lebar console (untuk memotong baris status agar tidak wrap)
@@ -182,6 +197,25 @@ function Show-Live {
 #    tidak menulisnya (kelihatan valid padahal nilainya salah)
 #  - server TANPA newline -> sisa itu memang 1 record utuh, jadi ditulis
 function Close-Session([bool]$final) {
+    # data yang masih ditahan fase belajar jangan sampai hilang
+    if ($learnChunk -and $learnChunk.Count -gt 0) {
+        foreach ($c in $learnChunk) {
+            if ($recLen -gt 0 -and ($c.Length % $recLen) -eq 0) {
+                for ($i = 0; $i -lt $c.Length; $i += $recLen) {
+                    $o = $c.Substring($i, $recLen)
+                    if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
+                    $writer.WriteLine($o); $script:count = $count + 1; $script:latest = $c.Substring($i, $recLen)
+                }
+            }
+            else {
+                $o = $c
+                if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
+                $writer.WriteLine($o); $script:count = $count + 1; $script:latest = $c
+            }
+        }
+        $learnChunk.Clear()
+    }
+
     $rem     = $partial.ToString()
     $carried = $false
 
@@ -278,6 +312,7 @@ try {
     }
 
     $stream = $client.GetStream()
+    $sock   = $client.Client
     Write-Host "[INFO] GO DATA - Terhubung ke server." -ForegroundColor Green
     if (-not (Test-Path -LiteralPath $cfgPath)) { Save-Config $IP $Port }
 
@@ -297,6 +332,11 @@ try {
     $prevLen  = 0
     $liveLine = $false
     $sawNL    = $false
+
+    # state framing untuk server tanpa pemisah
+    $recLen     = $RecordLength
+    $learnChunk = New-Object 'System.Collections.Generic.List[string]'
+    $learnMs    = [Diagnostics.Stopwatch]::StartNew()
     $showSw   = [Diagnostics.Stopwatch]::StartNew()
 
     Show-NamePrompt
@@ -377,7 +417,11 @@ try {
         # ---------------- (2) Socket: baca + framing ----------------
         $wrote = $false
 
-        if ($stream.DataAvailable) {
+        # Tunggu data dengan Socket.Poll: langsung bangun begitu byte
+        # pertama tiba. (Start-Sleep TIDAK dipakai: di Windows sleep
+        # sependek 2ms tetap jadi ~15ms, sehingga pada data 10ms dua
+        # record menumpuk di buffer dan terbaca sebagai satu record.)
+        if ($sock.Poll($pollUs, [System.Net.Sockets.SelectMode]::SelectRead)) {
             $n = $stream.Read($buffer, 0, $buffer.Length)
             if ($n -le 0) { $serverClosed = $true; break }
             [void]$partial.Append($enc.GetString($buffer, 0, $n))
@@ -406,25 +450,104 @@ try {
                     }
                 }
             }
-            elseif (-not $sawNL -and -not $stream.DataAvailable) {
-                # --- Framing B: server TIDAK pakai newline ---
-                # Satu burst = satu record (seperti SHARKCODE versi awal).
-                # Syarat -not DataAvailable: kalau masih ada lanjutan menunggu,
-                # data digabung dulu supaya record tidak terpotong.
-                $rec = $s.Trim()
-                [void]$partial.Clear()
-                if ($rec.Length -gt 0) {
-                    if ($writer) {
-                        $o = $rec
-                        if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
-                        $writer.WriteLine($o); $count++; $latest = $rec; $wrote = $true
-                    } else {
-                        $pending.Add($rec)
+            elseif (-not $sawNL) {
+                # =========== Framing B: server TIDAK pakai newline ===========
+                # Tanpa pemisah, batas record TIDAK ada di dalam data. Kalau
+                # hanya mengandalkan timing, sekali proses tersendat (GC, flush
+                # disk, repaint layar) dua record sudah menumpuk di buffer dan
+                # terbaca jadi satu. Karena itu: begitu panjang record diketahui
+                # tetap, pemisahan dilakukan per-panjang (deterministik).
+                $emit = $null
+
+                if ($recLen -gt 0) {
+                    # ---- MODE PANJANG TETAP (tidak bergantung timing) ----
+                    $k = [int][Math]::Floor($s.Length / $recLen)
+                    if ($k -gt 0) {
+                        $emit = New-Object 'System.Collections.Generic.List[string]'
+                        for ($i = 0; $i -lt $k; $i++) {
+                            [void]$emit.Add($s.Substring($i * $recLen, $recLen))
+                        }
+                        [void]$partial.Clear()
+                        [void]$partial.Append($s.Substring($k * $recLen))
+                    }
+                }
+                elseif (-not $stream.DataAvailable) {
+                    # ---- MODE BELAJAR ----
+                    # Batas sementara dari timing. Data ditahan sebentar (maks
+                    # ~200ms) supaya kalau ternyata panjangnya tetap, potongan
+                    # yang menumpuk bisa dibelah ulang dengan benar SEBELUM
+                    # ditulis - jadi tidak ada baris numpuk di file.
+                    $chunk = $s.Trim()
+                    [void]$partial.Clear()
+                    if ($chunk.Length -gt 0) { [void]$learnChunk.Add($chunk) }
+
+                    $decide = $false
+                    if ($learnChunk.Count -ge 12) { $decide = $true }
+                    elseif ($learnMs.ElapsedMilliseconds -ge 200) {
+                        if ($learnChunk.Count -ge 3) { $decide = $true }
+                        elseif ($learnChunk.Count -gt 0) {
+                            # server lambat -> tidak ada risiko numpuk,
+                            # tulis apa adanya biar tetap realtime
+                            $emit = New-Object 'System.Collections.Generic.List[string]'
+                            foreach ($c in $learnChunk) { [void]$emit.Add($c) }
+                            $learnChunk.Clear()
+                            $learnMs.Restart()
+                        }
+                        else { $learnMs.Restart() }
+                    }
+
+                    if ($decide) {
+                        # Record terpendek = 1 record utuh; yang menumpuk selalu
+                        # kelipatannya. Kalau semua kelipatan -> panjang tetap.
+                        $L = [int]::MaxValue
+                        foreach ($c in $learnChunk) { if ($c.Length -lt $L) { $L = $c.Length } }
+
+                        # Syarat kunci panjang tetap (sengaja ketat, supaya data
+                        # yang panjangnya memang bervariasi TIDAK ikut dibelah):
+                        #  1. semua chunk kelipatan pas dari $L
+                        #  2. mayoritas (>=60%) chunk panjangnya TEPAT $L
+                        # Data bervariasi spt 10/20/30 char gagal di syarat 2,
+                        # jadi tidak akan salah dibelah.
+                        $exact = 0
+                        foreach ($c in $learnChunk) { if ($c.Length -eq $L) { $exact++ } }
+                        $isFixed = ($L -gt 0) -and (($exact * 100) -ge ($learnChunk.Count * 60))
+                        if ($isFixed) {
+                            foreach ($c in $learnChunk) {
+                                if (($c.Length % $L) -ne 0) { $isFixed = $false; break }
+                            }
+                        }
+
+                        $emit = New-Object 'System.Collections.Generic.List[string]'
+                        if ($isFixed) {
+                            $recLen = $L
+                            foreach ($c in $learnChunk) {
+                                for ($i = 0; $i -lt $c.Length; $i += $L) {
+                                    [void]$emit.Add($c.Substring($i, $L))
+                                }
+                            }
+                            Write-Host ("`n[INFO] Data tanpa pemisah: panjang record TETAP {0} karakter terdeteksi -> pemisahan deterministik, tidak akan menumpuk lagi." -f $L) -ForegroundColor DarkGray
+                        }
+                        else {
+                            foreach ($c in $learnChunk) { [void]$emit.Add($c) }
+                            Write-Host "`n[PERINGATAN] Data tanpa pemisah dan panjangnya TIDAK tetap. Batas record hanya bisa dari timing, jadi saat data sangat cepat masih mungkin menumpuk. Solusi pasti: minta server mengirim newline, atau set `$RecordLength di script." -ForegroundColor Yellow
+                        }
+                        $learnChunk.Clear()
+                    }
+                }
+
+                if ($emit) {
+                    foreach ($rec in $emit) {
+                        if ($rec.Length -eq 0) { continue }
+                        if ($writer) {
+                            $o = $rec
+                            if ($ExcelSafe) { $o = $rxRisk.Replace($o, '="$1"') }
+                            $writer.WriteLine($o); $count++; $latest = $rec; $wrote = $true
+                        } else {
+                            $pending.Add($rec)
+                        }
                     }
                 }
             }
-            # else: belum ada newline tapi masih ada data menunggu ->
-            #       biarkan menumpuk (menyatukan record yang terpotong)
         }
 
         # ---------------- (3) Save realtime + tampilkan 1 baris ----------------
@@ -438,9 +561,6 @@ try {
                 Show-Live
                 $showSw.Restart()
             }
-        }
-        elseif (-not $stream.DataAvailable) {
-            Start-Sleep -Milliseconds 2
         }
     }
 
