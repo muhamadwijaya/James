@@ -38,6 +38,9 @@ Can return full success, `partial_success` (with `failedCodes`), or a 400
 
 ```
 James.sln
+build.bat                        # auto compile (Windows): SDK check -> build -> test -> publish EXE
+run.bat                          # jalankan program (request / confirm)
+config.bat                       # BaseUrl + x-api-key
 src/
   Fukusuke.UniqueCode.Client/    # the reusable typed client library
     Models/                      # request/response DTOs
@@ -52,7 +55,36 @@ tests/
   Fukusuke.UniqueCode.Tests/     # xUnit tests (stubbed HttpClient, no network)
 ```
 
-## Build, test, run
+## Quick start (Windows) — auto compile
+
+Cukup **double-click `build.bat`**. Script akan otomatis:
+
+1. Mendeteksi .NET 8 SDK — kalau belum ada, menawarkan install otomatis
+   (via `winget`, atau installer resmi Microsoft sebagai cadangan).
+2. `dotnet restore` + `dotnet build -c Release`
+3. Menjalankan seluruh unit test
+4. Publish jadi satu file EXE di `publish\Fukusuke.UniqueCode.Console.exe`
+
+Lalu isi API key di **`config.bat`**:
+
+```bat
+set "UniqueCodeApi__BaseUrl=https://devloyaltyapi.wingscorp.com"
+set "UniqueCodeApi__ApiKey=<x-api-key Anda>"
+```
+
+Dan jalankan lewat **`run.bat`**:
+
+```bat
+run.bat request 13 6 000001 2
+run.bat confirm 1 3 1 ABC123 2025-10-29
+```
+
+`run.bat` otomatis memuat `config.bat`, dan akan menanyakan API key kalau masih kosong.
+
+> File batch yang tersedia: `build.bat` (auto compile), `run.bat` (jalankan program),
+> `config.bat` (kredensial API).
+
+## Build, test, run (manual / Linux / macOS)
 
 Requires the **.NET 8 SDK**.
 
