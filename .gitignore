@@ -1,0 +1,34 @@
+## .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+artifacts/
+publish/
+
+## Rider / VS / VS Code
+.idea/
+.vs/
+*.user
+*.suo
+.vscode/
+
+## Test results
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+coverage/
+
+## NuGet
+*.nupkg
+.packages/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Local secrets - never commit real API keys
+appsettings.*.local.json
+secrets.json
