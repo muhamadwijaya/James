@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -35,6 +36,12 @@ public sealed class UniqueCodeClient : IUniqueCodeClient
         _options.Validate();
         ConfigureHttpClient();
     }
+
+    /// <summary>
+    /// Formats a count with thousands separators using the invariant culture, so
+    /// exception messages are identical regardless of the machine's locale.
+    /// </summary>
+    private static string N(long value) => value.ToString("N0", CultureInfo.InvariantCulture);
 
     internal static JsonSerializerOptions CreateJsonOptions()
     {
@@ -104,7 +111,7 @@ public sealed class UniqueCodeClient : IUniqueCodeClient
         {
             throw new ArgumentException(
                 $"A single request-unique-code call may ask for at most " +
-                $"{UniqueCodeClientOptions.MaxRequestCodesPerCall:N0} codes, but {total:N0} were requested. " +
+                $"{N(UniqueCodeClientOptions.MaxRequestCodesPerCall)} codes, but {N(total)} were requested. " +
                 $"Use {nameof(RequestUniqueCodesBatchedAsync)} to split the workload.",
                 nameof(request));
         }
@@ -161,7 +168,7 @@ public sealed class UniqueCodeClient : IUniqueCodeClient
         {
             throw new ArgumentException(
                 $"A single confirm-unique-code call may confirm at most " +
-                $"{UniqueCodeClientOptions.MaxConfirmCodesPerCall:N0} codes, but {request.Confirmations.Count:N0} were supplied. " +
+                $"{N(UniqueCodeClientOptions.MaxConfirmCodesPerCall)} codes, but {N(request.Confirmations.Count)} were supplied. " +
                 $"Use {nameof(ConfirmUniqueCodesBatchedAsync)} to split the workload.",
                 nameof(request));
         }
@@ -222,8 +229,8 @@ public sealed class UniqueCodeClient : IUniqueCodeClient
             if (material.Quantity > maxPerBatch)
             {
                 throw new ArgumentException(
-                    $"Material '{material.MaterialId}' requests {material.Quantity:N0} codes, which exceeds the " +
-                    $"per-call limit of {maxPerBatch:N0}. Split this material into smaller quantities.");
+                    $"Material '{material.MaterialId}' requests {N(material.Quantity)} codes, which exceeds the " +
+                    $"per-call limit of {N(maxPerBatch)}. Split this material into smaller quantities.");
             }
 
             if (currentTotal + material.Quantity > maxPerBatch && current.Count > 0)
