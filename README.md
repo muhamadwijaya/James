@@ -22,8 +22,13 @@ kemampuan pemulihan key berasal dari firmware Iceman.
 
 ## Pemakaian — GUI (tampilan grafis)
 
-GUI utama memakai **PySide6 (Qt)**:
+GUI utama memakai **PySide6 (Qt)**.
 
+**Cara termudah — tinggal dobel-klik:**
+- **Windows:** `run.bat` (otomatis cek Python, pasang PySide6, lalu buka GUI).
+- **Linux/macOS:** `./run.sh`.
+
+**Manual:**
 ```bash
 pip install PySide6        # sekali saja
 python -m pm3tool gui      # atau: python -m pm3tool.gui_qt
