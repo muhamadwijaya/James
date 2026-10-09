@@ -20,7 +20,23 @@ kemampuan pemulihan key berasal dari firmware Iceman.
    Lihat <https://github.com/RfidResearchGroup/proxmark3>.
 3. Python 3.10+.
 
-## Pemakaian
+## Pemakaian — GUI (tampilan grafis)
+
+```bash
+python -m pm3tool gui
+# atau: python -m pm3tool.gui
+```
+
+Jendela berisi kolom **Binary**/**Port** di atas dan tombol **Check**,
+**Scan (LF+HF)**, **Read HF**, **Read LF**, **Recover Keys**, **Dump…**.
+Hasil tampil di area teks hitam di bawahnya. Perintah panjang (mis.
+hardnested) berjalan di latar belakang sehingga jendela tetap responsif.
+
+GUI memakai **Tkinter**, yang sudah termasuk di installer Python resmi
+(Windows & macOS). Di Linux, pasang dulu paket `python3-tk`
+(mis. `sudo apt install python3-tk`).
+
+## Pemakaian — CLI
 
 ```bash
 # cek koneksi & tuning antena

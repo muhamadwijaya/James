@@ -89,6 +89,15 @@ def cmd_dump(args) -> int:
     return 0 if res.ok else 1
 
 
+def cmd_gui(args) -> int:
+    try:
+        from .gui import main as gui_main
+    except ImportError as exc:  # tkinter tidak terpasang
+        print(f"ERROR: tidak bisa memuat GUI (tkinter?): {exc}", file=sys.stderr)
+        return 2
+    return gui_main()
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pm3tool",
@@ -118,6 +127,8 @@ def build_parser() -> argparse.ArgumentParser:
     dmp = sub.add_parser("dump", help="Dump isi MIFARE memakai key diketahui.")
     dmp.add_argument("--keyfile", default=None, help="File .bin key dari autopwn.")
     dmp.set_defaults(func=cmd_dump)
+
+    sub.add_parser("gui", help="Buka antarmuka grafis (Tkinter).").set_defaults(func=cmd_gui)
 
     return p
 
