@@ -89,6 +89,39 @@ def cmd_dump(args) -> int:
     return 0 if res.ok else 1
 
 
+def cmd_recover_reader(args) -> int:
+    from . import attack
+    print("PM3 menyamar sebagai kartu. Tempelkan PM3 ke reader Anda "
+          "berulang sampai key muncul. Tekan tombol PM3 untuk berhenti.\n")
+    data = attack.recover_via_reader(_make_client(args), uid=args.uid,
+                                     timeout=args.timeout)
+    if data["keys"]:
+        print("Key ditemukan:")
+        for k in data["keys"]:
+            print(f"  {k}")
+    else:
+        print("Belum ada key terpulihkan.")
+    if args.raw or not data["keys"]:
+        print("\n--- RAW ---\n" + data["raw"])
+    return 0 if data["ok"] else 1
+
+
+def cmd_sniff(args) -> int:
+    from . import attack
+    print("Menyadap reader<->kartu. Tap kartu ke reader, lalu tekan tombol "
+          "PM3 untuk mengakhiri sniff.\n")
+    data = attack.sniff_and_crack(_make_client(args), sniff_timeout=args.timeout)
+    if data["keys"]:
+        print("Key ditemukan:")
+        for k in data["keys"]:
+            print(f"  {k}")
+    else:
+        print("Belum ada key terpulihkan dari trace.")
+    if args.raw or not data["keys"]:
+        print("\n--- TRACE ---\n" + data["raw"])
+    return 0 if data["ok"] else 1
+
+
 def cmd_clone(args) -> int:
     from . import clone
     client = _make_client(args)
@@ -169,6 +202,14 @@ def build_parser() -> argparse.ArgumentParser:
     dmp = sub.add_parser("dump", help="Dump isi MIFARE memakai key diketahui.")
     dmp.add_argument("--keyfile", default=None, help="File .bin key dari autopwn.")
     dmp.set_defaults(func=cmd_dump)
+
+    rr = sub.add_parser("recover-reader",
+                        help="Pulihkan key lewat reader (mfkey32, sim).")
+    rr.add_argument("--uid", default=None, help="UID yang disimulasikan (hex).")
+    rr.set_defaults(func=cmd_recover_reader, timeout=240.0)
+
+    sn = sub.add_parser("sniff", help="Sniff reader↔kartu lalu crack (trace).")
+    sn.set_defaults(func=cmd_sniff, timeout=240.0)
 
     cl = sub.add_parser("clone", help="Clone/pindah data ke chip baru.")
     cl.add_argument("--info", action="store_true", help="Deteksi kartu magic.")

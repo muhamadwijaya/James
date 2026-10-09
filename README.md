@@ -85,6 +85,10 @@ python -m pm3tool read-lf
 python -m pm3tool recover-keys
 python -m pm3tool recover-keys --dict daftar_key_saya.dic
 
+# pulihkan key LEWAT READER (kalau Anda punya reader-nya)
+python -m pm3tool recover-reader --uid 2CD72F90   # PM3 jadi kartu (mfkey32)
+python -m pm3tool sniff                           # sadap reader↔kartu lalu crack
+
 # dump isi kartu memakai key yang sudah ditemukan
 python -m pm3tool dump --keyfile hf-mf-ABCD1234-key.bin
 
@@ -117,6 +121,22 @@ Jika port tidak terdeteksi otomatis, tentukan manual:
 python -m pm3tool --port /dev/ttyACM0 scan     # Linux
 python -m pm3tool --port COM3 scan             # Windows
 ```
+
+## Pemulihan key lewat reader
+
+Kalau Anda masih punya **reader** yang tahu key kartu, key bisa dipulihkan
+tanpa menyerang kartunya. Reader tidak pernah mengirim key (MIFARE Classic
+pakai challenge-response Crypto1), tapi key bisa **dihitung** dari
+autentikasinya:
+
+- **`recover-reader`** — PM3 menyamar sebagai kartu (`hf mf sim ... -x`),
+  Anda tempelkan PM3 ke reader, nonce reader dikumpulkan lalu key dihitung
+  (mfkey32). Beri `--uid` sama dengan kartu asli agar reader mau berinteraksi.
+- **`sniff`** — sadap transaksi reader↔kartu asli (`hf 14a sniff`) lalu
+  dekode & pulihkan key dari trace (`trace list -t mf`, mfkey64).
+
+Di GUI, keduanya ada di tab **Reader** → grup "Recover key lewat READER".
+Sering lebih cepat daripada autopwn. Gunakan hanya pada reader/kartu sendiri.
 
 ## Catatan tentang `recover-keys`
 

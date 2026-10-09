@@ -18,6 +18,14 @@ _KEY_RE = re.compile(
     r"^\s*\[\+\]\s*(\d+)\s*\|\s*([AB])\s*\|\s*([0-9A-Fa-f]{12})\s*\|",
     re.MULTILINE,
 )
+# key hasil mfkey32/mfkey64/sim, mis:
+#   "[+]  Found valid key: ffffffffffff"
+#   "[+] Found Key: A [ffffffffffff]"
+#   "key: a0a1a2a3a4a5"
+_MFKEY_RE = re.compile(
+    r"(?:found\s+(?:valid\s+)?key|key)\s*:?\s*(?:[AB]\s*)?\[?([0-9A-Fa-f]{12})\]?",
+    re.IGNORECASE,
+)
 
 
 def _clean_hex(s: str) -> str:
@@ -54,3 +62,16 @@ def parse_found_keys(text: str) -> list[dict[str, str]]:
     for sector, ktype, key in _KEY_RE.findall(text):
         keys.append({"sector": sector, "type": ktype, "key": key.upper()})
     return keys
+
+
+def parse_mfkey_keys(text: str) -> list[str]:
+    """Ambil key hex (12 digit) dari output mfkey32/mfkey64/sim.
+
+    Mengembalikan daftar key unik (urutan kemunculan dipertahankan).
+    """
+    seen: list[str] = []
+    for key in _MFKEY_RE.findall(text):
+        k = key.upper()
+        if k not in seen:
+            seen.append(k)
+    return seen

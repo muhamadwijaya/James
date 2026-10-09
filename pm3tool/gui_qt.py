@@ -20,7 +20,7 @@ import sys
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .client import PM3Client, PM3NotFound
-from . import scanner, flasher, firmware, clone
+from . import scanner, flasher, firmware, clone, attack
 
 
 class Worker(QtCore.QThread):
@@ -100,22 +100,52 @@ class MainWindow(QtWidgets.QMainWindow):
     # ---------- tab Reader ----------
     def _build_reader_tab(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget()
-        grid = QtWidgets.QGridLayout(w)
+        lay = QtWidgets.QVBoxLayout(w)
+        self.reader_buttons: list[QtWidgets.QPushButton] = []
+
+        grid = QtWidgets.QGridLayout()
         actions = [
             ("Check device", self.on_check),
             ("Scan (LF+HF)", self.on_scan),
             ("Read HF", self.on_read_hf),
             ("Read LF", self.on_read_lf),
-            ("Recover Keys", self.on_recover),
+            ("Recover Keys (dari kartu)", self.on_recover),
             ("Dump…", self.on_dump),
         ]
-        self.reader_buttons: list[QtWidgets.QPushButton] = []
         for i, (label, cb) in enumerate(actions):
             b = QtWidgets.QPushButton(label)
             b.clicked.connect(cb)
             grid.addWidget(b, i // 3, i % 3)
             self.reader_buttons.append(b)
-        grid.setRowStretch(2, 1)
+        lay.addLayout(grid)
+
+        # --- pemulihan key lewat READER (mfkey32 / sniff) ---
+        box = QtWidgets.QGroupBox("Recover key lewat READER (punya reader-nya)")
+        gl = QtWidgets.QVBoxLayout(box)
+        gl.addWidget(QtWidgets.QLabel(
+            "Pakai ini kalau reader masih tahu key-nya. Key tidak pernah "
+            "dikirim reader, tapi bisa DIHITUNG dari autentikasinya."))
+
+        urow = QtWidgets.QHBoxLayout()
+        urow.addWidget(QtWidgets.QLabel("UID (untuk simulasi):"))
+        self.sim_uid_edit = QtWidgets.QLineEdit()
+        self.sim_uid_edit.setPlaceholderText("mis. 2CD72F90 (kosong = default)")
+        urow.addWidget(self.sim_uid_edit, 1)
+        gl.addLayout(urow)
+
+        b_reader = QtWidgets.QPushButton(
+            "Recover via Reader — PM3 jadi kartu, tempel ke reader (mfkey32)")
+        b_reader.clicked.connect(self.on_recover_reader)
+        gl.addWidget(b_reader)
+
+        b_sniff = QtWidgets.QPushButton(
+            "Sniff & Crack — sadap reader↔kartu, lalu pecahkan (trace)")
+        b_sniff.clicked.connect(self.on_sniff_crack)
+        gl.addWidget(b_sniff)
+        self.reader_buttons += [b_reader, b_sniff]
+
+        lay.addWidget(box)
+        lay.addStretch(1)
         return w
 
     # ---------- tab Clone ----------
@@ -399,6 +429,43 @@ class MainWindow(QtWidgets.QMainWindow):
             res = scanner.dump_mifare(c, keyfile=keyfile or None)
             emit(res.stdout or res.stderr)
         self._start("Dump", job)
+
+    def _show_mfkeys(self, emit, keys: list[str]) -> None:
+        if keys:
+            emit("Key ditemukan:\n", "ok")
+            for k in keys:
+                emit(f"  {k}\n", "ok")
+            emit("Pakai key ini untuk dump/clone (tab Clone atau 'Dump').\n")
+        else:
+            emit("Belum ada key yang terpulihkan.\n", "err")
+
+    def on_recover_reader(self) -> None:
+        uid = self.sim_uid_edit.text().strip() or None
+        self._append(
+            "PM3 akan menyamar sebagai kartu. TEMPELKAN PM3 ke reader Anda "
+            "beberapa kali hingga key ditemukan. Tekan tombol PM3 untuk berhenti.\n",
+            "info")
+
+        def job(emit):
+            c = self._client(); self._guard_client(emit, c)
+            data = attack.recover_via_reader(c, uid=uid, timeout=240.0)
+            self._show_mfkeys(emit, data["keys"])
+            if not data["keys"]:
+                emit("\n" + data["raw"])
+        self._start("Recover via Reader", job)
+
+    def on_sniff_crack(self) -> None:
+        self._append(
+            "Mulai menyadap. Dekatkan kartu asli ke reader agar transaksi "
+            "terekam, lalu tekan tombol PM3 untuk mengakhiri sniff.\n", "info")
+
+        def job(emit):
+            c = self._client(); self._guard_client(emit, c)
+            data = attack.sniff_and_crack(c, sniff_timeout=240.0)
+            self._show_mfkeys(emit, data["keys"])
+            if not data["keys"]:
+                emit("\n--- trace ---\n" + data["raw"])
+        self._start("Sniff & Crack", job)
 
     # ---------- aksi Clone ----------
     def on_clone_info(self) -> None:
