@@ -90,6 +90,19 @@ def cmd_dump(args) -> int:
     return 0 if res.ok else 1
 
 
+def cmd_ports(args) -> int:
+    from . import ports
+    found = ports.list_serial_ports()
+    if found:
+        print("Serial port terdeteksi:")
+        for p in found:
+            print(f"  {p}")
+    else:
+        print("Tidak ada serial port terdeteksi. Colok perangkat & tutup "
+              "sesi pm3 lain.")
+    return 0
+
+
 def cmd_view(args) -> int:
     from . import dumpview
     try:
@@ -215,6 +228,8 @@ def build_parser() -> argparse.ArgumentParser:
     dmp = sub.add_parser("dump", help="Dump isi MIFARE memakai key diketahui.")
     dmp.add_argument("--keyfile", default=None, help="File .bin key dari autopwn.")
     dmp.set_defaults(func=cmd_dump)
+
+    sub.add_parser("ports", help="Daftar serial port yang aktif.").set_defaults(func=cmd_ports)
 
     vw = sub.add_parser("view", help="Lihat isi dump (hex/ASCII).")
     vw.add_argument("--dump", required=True, help="File dump (.bin/.eml/.json).")

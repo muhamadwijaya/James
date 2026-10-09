@@ -100,11 +100,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.port_edit = QtWidgets.QLineEdit(os.environ.get("PM3_PORT", ""))
         self.port_edit.setPlaceholderText("kosong = auto (mis. COM3 / /dev/ttyACM0)")
         bar.addWidget(self.port_edit, 1)
+        ports_btn = QtWidgets.QPushButton("Ports…")
+        ports_btn.setToolTip("Deteksi & pilih COM port yang aktif.")
+        ports_btn.clicked.connect(self._pick_port)
+        bar.addWidget(ports_btn)
 
         clear = QtWidgets.QPushButton("Clear log")
         clear.clicked.connect(self.output_clear)
         bar.addWidget(clear)
         return bar
+
+    def _pick_port(self) -> None:
+        from . import ports
+        found = ports.list_serial_ports()
+        if not found:
+            QtWidgets.QMessageBox.information(
+                self, "Ports",
+                "Tidak ada COM port terdeteksi.\n\n"
+                "Pastikan Proxmark3 tercolok, dan TUTUP sesi 'pm3 -->' "
+                "interaktif (satu port cuma untuk satu program).")
+            return
+        cur = self.port_edit.text().strip()
+        idx = found.index(cur) if cur in found else 0
+        item, ok = QtWidgets.QInputDialog.getItem(
+            self, "Pilih port", "Serial port aktif:", found, idx, False)
+        if ok and item:
+            self.port_edit.setText(item)
 
     def _pick_binary(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
