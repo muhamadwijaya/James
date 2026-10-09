@@ -22,19 +22,48 @@ kemampuan pemulihan key berasal dari firmware Iceman.
 
 ## Pemakaian — GUI (tampilan grafis)
 
+GUI utama memakai **PySide6 (Qt)**:
+
 ```bash
-python -m pm3tool gui
-# atau: python -m pm3tool.gui
+pip install PySide6        # sekali saja
+python -m pm3tool gui      # atau: python -m pm3tool.gui_qt
 ```
 
-Jendela berisi kolom **Binary**/**Port** di atas dan tombol **Check**,
-**Scan (LF+HF)**, **Read HF**, **Read LF**, **Recover Keys**, **Dump…**.
-Hasil tampil di area teks hitam di bawahnya. Perintah panjang (mis.
-hardnested) berjalan di latar belakang sehingga jendela tetap responsif.
+Jendela punya kolom **Binary**/**Port** di atas dan dua tab:
 
-GUI memakai **Tkinter**, yang sudah termasuk di installer Python resmi
-(Windows & macOS). Di Linux, pasang dulu paket `python3-tk`
-(mis. `sudo apt install python3-tk`).
+- **Reader** — tombol **Check**, **Scan (LF+HF)**, **Read HF**, **Read LF**,
+  **Recover Keys**, **Dump…**.
+- **Firmware** — **Temukan firmware**, **Flash ALL**, **Flash fullimage**,
+  **Flash bootrom**, flash file `.elf` kustom, dan **Download & build
+  firmware** dari source resmi Iceman.
+
+Hasil tampil di log hitam di bawah. Operasi panjang (hardnested, flash,
+build) berjalan di thread terpisah sehingga jendela tetap responsif.
+
+Masih tersedia GUI ringan berbasis Tkinter:
+
+```bash
+python -m pm3tool gui-tk
+```
+
+(Tkinter bawaan installer Python di Windows/macOS; di Linux pasang
+`python3-tk`.)
+
+## Firmware & flashing
+
+Firmware Proxmark3 bersifat open-source (GPL) dan berasal dari repo resmi
+**Iceman/RRG** (<https://github.com/RfidResearchGroup/proxmark3>). Tool ini
+**tidak** menyertakan biner firmware; ia hanya:
+
+- **membangun** firmware dari source (`Firmware ▸ Download & build`, butuh
+  `git`, `make`, dan toolchain `arm-none-eabi-gcc`), atau
+- **menemukan** `bootrom.elf`/`fullimage.elf` yang sudah terpasang, lalu
+- **flash** lewat tool resmi: `pm3-flash-all`, `pm3-flash-fullimage`,
+  `pm3-flash-bootrom`, atau `flasher` mentah dengan file `.elf` pilihan.
+
+> Flash hanya perangkat Proxmark3 milik Anda. Jangan cabut saat proses
+> berlangsung. Jika bootrom gagal, tahan tombol perangkat saat mencolok
+> untuk masuk mode bootloader, lalu ulangi.
 
 ## Pemakaian — CLI
 

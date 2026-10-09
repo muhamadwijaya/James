@@ -90,10 +90,26 @@ def cmd_dump(args) -> int:
 
 
 def cmd_gui(args) -> int:
+    # Utamakan GUI PySide6; fallback ke Tkinter bila PySide6 tak terpasang.
+    try:
+        from .gui_qt import main as gui_main
+    except ImportError:
+        try:
+            from .gui import main as gui_main
+        except ImportError as exc:
+            print("ERROR: tidak ada GUI toolkit. Install PySide6 "
+                  f"(pip install PySide6) atau tkinter. Detail: {exc}",
+                  file=sys.stderr)
+            return 2
+        print("PySide6 tidak ada, memakai GUI Tkinter.", file=sys.stderr)
+    return gui_main()
+
+
+def cmd_gui_tk(args) -> int:
     try:
         from .gui import main as gui_main
-    except ImportError as exc:  # tkinter tidak terpasang
-        print(f"ERROR: tidak bisa memuat GUI (tkinter?): {exc}", file=sys.stderr)
+    except ImportError as exc:
+        print(f"ERROR: tidak bisa memuat GUI Tkinter: {exc}", file=sys.stderr)
         return 2
     return gui_main()
 
@@ -128,7 +144,8 @@ def build_parser() -> argparse.ArgumentParser:
     dmp.add_argument("--keyfile", default=None, help="File .bin key dari autopwn.")
     dmp.set_defaults(func=cmd_dump)
 
-    sub.add_parser("gui", help="Buka antarmuka grafis (Tkinter).").set_defaults(func=cmd_gui)
+    sub.add_parser("gui", help="Buka GUI (PySide6, fallback Tkinter).").set_defaults(func=cmd_gui)
+    sub.add_parser("gui-tk", help="Buka GUI Tkinter.").set_defaults(func=cmd_gui_tk)
 
     return p
 
