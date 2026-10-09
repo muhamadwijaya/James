@@ -33,6 +33,9 @@ Jendela punya kolom **Binary**/**Port** di atas dan dua tab:
 
 - **Reader** — tombol **Check**, **Scan (LF+HF)**, **Read HF**, **Read LF**,
   **Recover Keys**, **Dump…**.
+- **Dump Viewer** — lihat isi file dump (.bin/.eml/.json) per blok dalam
+  **hex + ASCII**, filter per sektor (mis. `1-4`), trailer diurai
+  (KeyA / AC+GPB / KeyB). Berguna membandingkan data teks vs hex mentah.
 - **Clone** — pindahkan isi kartu ke chip baru: deteksi kartu magic,
   clone ke magic Gen1a (`hf mf cload`), restore pakai key
   (`hf mf restore`), set UID magic (`hf mf csetuid`), wipe & verify.
@@ -91,6 +94,10 @@ python -m pm3tool sniff                           # sadap reader↔kartu lalu cr
 
 # dump isi kartu memakai key yang sudah ditemukan
 python -m pm3tool dump --keyfile hf-mf-ABCD1234-key.bin
+
+# lihat isi dump dalam hex + ASCII (bandingkan teks vs data mentah)
+python -m pm3tool view --dump hf-mf-2CD72F90-dump.bin --sectors 1-4
+python -m pm3tool view --dump d.bin --sectors 1-4 --format ascii
 
 # clone / pindah data ke chip baru
 python -m pm3tool clone --info                         # deteksi kartu magic

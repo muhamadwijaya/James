@@ -20,7 +20,7 @@ import sys
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .client import PM3Client, PM3NotFound
-from . import scanner, flasher, firmware, clone, attack
+from . import scanner, flasher, firmware, clone, attack, dumpview
 
 
 class Worker(QtCore.QThread):
@@ -63,6 +63,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self._build_reader_tab(), "Reader")
+        self.tabs.addTab(self._build_viewer_tab(), "Dump Viewer")
         self.tabs.addTab(self._build_clone_tab(), "Clone")
         self.tabs.addTab(self._build_firmware_tab(), "Firmware")
         root.addWidget(self.tabs, 1)
@@ -147,6 +148,62 @@ class MainWindow(QtWidgets.QMainWindow):
         lay.addWidget(box)
         lay.addStretch(1)
         return w
+
+    # ---------- tab Dump Viewer ----------
+    def _build_viewer_tab(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        lay.addWidget(QtWidgets.QLabel(
+            "Lihat isi dump (.bin/.eml/.json) dalam hex / ASCII. "
+            "Isi sektor 1–4 ditampilkan apa adanya untuk dibandingkan."))
+
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Dump:"))
+        self.view_dump_edit = QtWidgets.QLineEdit()
+        row.addWidget(self.view_dump_edit, 1)
+        pick = QtWidgets.QPushButton("Pilih…")
+        pick.clicked.connect(lambda: self._pick_into(
+            self.view_dump_edit, "Dump (*.bin *.eml *.json);;Semua file (*.*)"))
+        row.addWidget(pick)
+        lay.addLayout(row)
+
+        row2 = QtWidgets.QHBoxLayout()
+        row2.addWidget(QtWidgets.QLabel("Sektor:"))
+        self.view_sectors_edit = QtWidgets.QLineEdit()
+        self.view_sectors_edit.setPlaceholderText("mis. 1-4 (kosong = semua)")
+        self.view_sectors_edit.setMaximumWidth(160)
+        row2.addWidget(self.view_sectors_edit)
+        row2.addWidget(QtWidgets.QLabel("Format:"))
+        self.view_format = QtWidgets.QComboBox()
+        self.view_format.addItems(["Hex + ASCII", "Hex", "ASCII"])
+        row2.addWidget(self.view_format)
+        show = QtWidgets.QPushButton("Tampilkan")
+        show.clicked.connect(self.on_view_dump)
+        row2.addWidget(show)
+        row2.addStretch(1)
+        lay.addLayout(row2)
+
+        self.view_out = QtWidgets.QPlainTextEdit(readOnly=True)
+        self.view_out.setFont(QtGui.QFont("Monospace", 9))
+        self.view_out.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        self.view_out.setStyleSheet(
+            "QPlainTextEdit{background:#0c0f12;color:#cfe8d0;}")
+        lay.addWidget(self.view_out, 1)
+        return w
+
+    def on_view_dump(self) -> None:
+        path = self.view_dump_edit.text().strip()
+        if not path:
+            self.view_out.setPlainText("Pilih file dump dulu.")
+            return
+        mode = {"Hex + ASCII": "both", "Hex": "hex",
+                "ASCII": "ascii"}[self.view_format.currentText()]
+        sectors = self.view_sectors_edit.text().strip() or None
+        try:
+            text = dumpview.view_file(path, sectors_arg=sectors, mode=mode)
+        except (OSError, ValueError) as exc:
+            text = f"ERROR: {exc}"
+        self.view_out.setPlainText(text)
 
     # ---------- tab Clone ----------
     def _build_clone_tab(self) -> QtWidgets.QWidget:

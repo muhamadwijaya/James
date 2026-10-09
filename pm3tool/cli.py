@@ -89,6 +89,17 @@ def cmd_dump(args) -> int:
     return 0 if res.ok else 1
 
 
+def cmd_view(args) -> int:
+    from . import dumpview
+    try:
+        print(dumpview.view_file(args.dump, sectors_arg=args.sectors,
+                                 mode=args.format))
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def cmd_recover_reader(args) -> int:
     from . import attack
     print("PM3 menyamar sebagai kartu. Tempelkan PM3 ke reader Anda "
@@ -202,6 +213,14 @@ def build_parser() -> argparse.ArgumentParser:
     dmp = sub.add_parser("dump", help="Dump isi MIFARE memakai key diketahui.")
     dmp.add_argument("--keyfile", default=None, help="File .bin key dari autopwn.")
     dmp.set_defaults(func=cmd_dump)
+
+    vw = sub.add_parser("view", help="Lihat isi dump (hex/ASCII).")
+    vw.add_argument("--dump", required=True, help="File dump (.bin/.eml/.json).")
+    vw.add_argument("--sectors", default=None,
+                    help="Filter sektor, mis. '1-4' atau '1,3,5' (default: semua).")
+    vw.add_argument("--format", choices=["hex", "ascii", "both"], default="both",
+                    help="Format tampilan (default: both).")
+    vw.set_defaults(func=cmd_view)
 
     rr = sub.add_parser("recover-reader",
                         help="Pulihkan key lewat reader (mfkey32, sim).")
