@@ -89,6 +89,32 @@ def cmd_dump(args) -> int:
     return 0 if res.ok else 1
 
 
+def cmd_clone(args) -> int:
+    from . import clone
+    client = _make_client(args)
+    if args.info:
+        data = clone.card_info(client)
+        print("MAGIC:" , ", ".join(data["generations"]) if data["magic"] else "bukan/none")
+        print(data["raw"])
+        return 0
+    if args.set_uid:
+        res = clone.set_magic_uid(client, args.set_uid)
+        print(res.stdout or res.stderr)
+        return 0 if res.ok else 1
+    if args.gen1a:
+        if not args.dump:
+            print("ERROR: --dump wajib untuk --gen1a", file=sys.stderr)
+            return 2
+        res = clone.clone_to_gen1a(client, args.dump)
+        print(res.stdout or res.stderr)
+        return 0 if res.ok else 1
+    # default: restore pakai key
+    res = clone.restore_dump(client, dumpfile=args.dump, keyfile=args.keyfile,
+                             write_block0=args.block0)
+    print(res.stdout or res.stderr)
+    return 0 if res.ok else 1
+
+
 def cmd_gui(args) -> int:
     # Utamakan GUI PySide6; fallback ke Tkinter bila PySide6 tak terpasang.
     try:
@@ -143,6 +169,17 @@ def build_parser() -> argparse.ArgumentParser:
     dmp = sub.add_parser("dump", help="Dump isi MIFARE memakai key diketahui.")
     dmp.add_argument("--keyfile", default=None, help="File .bin key dari autopwn.")
     dmp.set_defaults(func=cmd_dump)
+
+    cl = sub.add_parser("clone", help="Clone/pindah data ke chip baru.")
+    cl.add_argument("--info", action="store_true", help="Deteksi kartu magic.")
+    cl.add_argument("--gen1a", action="store_true",
+                    help="Tulis seluruh dump+UID ke magic Gen1a (hf mf cload).")
+    cl.add_argument("--dump", default=None, help="File dump sumber (.bin/.eml/.json).")
+    cl.add_argument("--keyfile", default=None, help="File key untuk restore.")
+    cl.add_argument("--block0", action="store_true",
+                    help="Ikut tulis blok 0/UID saat restore (Gen2/CUID).")
+    cl.add_argument("--set-uid", default=None, help="Set UID magic Gen1a (hex).")
+    cl.set_defaults(func=cmd_clone)
 
     sub.add_parser("gui", help="Buka GUI (PySide6, fallback Tkinter).").set_defaults(func=cmd_gui)
     sub.add_parser("gui-tk", help="Buka GUI Tkinter.").set_defaults(func=cmd_gui_tk)

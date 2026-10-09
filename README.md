@@ -33,6 +33,9 @@ Jendela punya kolom **Binary**/**Port** di atas dan dua tab:
 
 - **Reader** — tombol **Check**, **Scan (LF+HF)**, **Read HF**, **Read LF**,
   **Recover Keys**, **Dump…**.
+- **Clone** — pindahkan isi kartu ke chip baru: deteksi kartu magic,
+  clone ke magic Gen1a (`hf mf cload`), restore pakai key
+  (`hf mf restore`), set UID magic (`hf mf csetuid`), wipe & verify.
 - **Firmware** — **Temukan firmware**, **Flash ALL**, **Flash fullimage**,
   **Flash bootrom**, flash file `.elf` kustom, dan **Download & build
   firmware** dari source resmi Iceman.
@@ -84,7 +87,29 @@ python -m pm3tool recover-keys --dict daftar_key_saya.dic
 
 # dump isi kartu memakai key yang sudah ditemukan
 python -m pm3tool dump --keyfile hf-mf-ABCD1234-key.bin
+
+# clone / pindah data ke chip baru
+python -m pm3tool clone --info                         # deteksi kartu magic
+python -m pm3tool clone --gen1a --dump hf-mf-2CD72F90-dump.bin   # ke magic Gen1a
+python -m pm3tool clone --dump d.bin --keyfile k.bin   # restore pakai key
+python -m pm3tool clone --set-uid 2CD72F90             # set UID magic Gen1a
 ```
+
+## Clone ke chip baru (pindah data)
+
+Alur memindahkan isi kartu lama ke chip baru:
+
+1. **Recover Keys** pada kartu asli → menghasilkan file dump `.bin` dan
+   key `.bin` (di direktori kerja client PM3).
+2. Siapkan **chip baru**. Untuk UID yang **sama**, chip harus kartu
+   **magic** (Gen1a/Gen2/Gen3) — MIFARE Classic biasa mengunci blok 0
+   (UID) dari pabrik, jadi UID-nya tidak bisa diubah.
+3. Tulis dump ke chip baru:
+   - **Magic Gen1a** → `clone --gen1a` (menulis semua blok **termasuk UID**).
+   - **Kartu normal / Gen2** → `clone` (restore data pakai key; UID ikut
+     hanya dengan `--block0` pada Gen2/CUID).
+4. (Opsional) set UID manual dengan `--set-uid`, lalu verifikasi di GUI
+   (tombol **Verifikasi**, `hf mf cview`).
 
 Jika port tidak terdeteksi otomatis, tentukan manual:
 

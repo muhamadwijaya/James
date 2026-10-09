@@ -20,7 +20,7 @@ import sys
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .client import PM3Client, PM3NotFound
-from . import scanner, flasher, firmware
+from . import scanner, flasher, firmware, clone
 
 
 class Worker(QtCore.QThread):
@@ -63,6 +63,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self._build_reader_tab(), "Reader")
+        self.tabs.addTab(self._build_clone_tab(), "Clone")
         self.tabs.addTab(self._build_firmware_tab(), "Firmware")
         root.addWidget(self.tabs, 1)
 
@@ -115,6 +116,89 @@ class MainWindow(QtWidgets.QMainWindow):
             grid.addWidget(b, i // 3, i % 3)
             self.reader_buttons.append(b)
         grid.setRowStretch(2, 1)
+        return w
+
+    # ---------- tab Clone ----------
+    def _build_clone_tab(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(w)
+        self.clone_buttons: list[QtWidgets.QPushButton] = []
+
+        info = QtWidgets.QLabel(
+            "Pindahkan isi kartu ke chip baru.\n"
+            "Langkah: (1) di tab Reader, Recover Keys → menghasilkan file dump "
+            ".bin + key. (2) tempel chip BARU. (3) tulis dump ke chip baru di sini.\n"
+            "Untuk UID yang sama, chip baru harus kartu MAGIC (Gen1a/Gen2/Gen3)."
+        )
+        info.setWordWrap(True)
+        lay.addWidget(info)
+
+        # deteksi magic
+        row = QtWidgets.QHBoxLayout()
+        b_info = QtWidgets.QPushButton("Deteksi kartu magic (hf mf info)")
+        b_info.clicked.connect(self.on_clone_info)
+        row.addWidget(b_info)
+        b_wipe = QtWidgets.QPushButton("Wipe Gen1a (kosongkan)")
+        b_wipe.clicked.connect(self.on_clone_wipe)
+        row.addWidget(b_wipe)
+        self.clone_buttons += [b_info, b_wipe]
+        lay.addLayout(row)
+
+        # file dump
+        box = QtWidgets.QGroupBox("File dump sumber (.bin/.eml/.json dari Recover Keys)")
+        g = QtWidgets.QGridLayout(box)
+        self.dump_edit = QtWidgets.QLineEdit()
+        g.addWidget(QtWidgets.QLabel("Dump:"), 0, 0)
+        g.addWidget(self.dump_edit, 0, 1)
+        pick_dump = QtWidgets.QPushButton("Pilih…")
+        pick_dump.clicked.connect(lambda: self._pick_into(
+            self.dump_edit, "Dump (*.bin *.eml *.json);;Semua file (*.*)"))
+        g.addWidget(pick_dump, 0, 2)
+        self.key_edit = QtWidgets.QLineEdit()
+        g.addWidget(QtWidgets.QLabel("Key file:"), 1, 0)
+        g.addWidget(self.key_edit, 1, 1)
+        pick_key = QtWidgets.QPushButton("Pilih…")
+        pick_key.clicked.connect(lambda: self._pick_into(
+            self.key_edit, "Key (*.bin);;Semua file (*.*)"))
+        g.addWidget(pick_key, 1, 2)
+        lay.addWidget(box)
+
+        # aksi tulis
+        box2 = QtWidgets.QGroupBox("Tulis ke chip baru")
+        g2 = QtWidgets.QVBoxLayout(box2)
+
+        b_gen1a = QtWidgets.QPushButton(
+            "Clone ke MAGIC Gen1a — semua blok + UID (hf mf cload)")
+        b_gen1a.clicked.connect(self.on_clone_gen1a)
+        g2.addWidget(b_gen1a)
+
+        self.wb0_check = QtWidgets.QCheckBox(
+            "Ikut tulis blok 0 / UID (butuh kartu Gen2/CUID yang mendukung)")
+        g2.addWidget(self.wb0_check)
+        b_restore = QtWidgets.QPushButton(
+            "Restore pakai key — kartu normal / Gen2 (hf mf restore)")
+        b_restore.clicked.connect(self.on_clone_restore)
+        g2.addWidget(b_restore)
+
+        b_verify = QtWidgets.QPushButton("Verifikasi isi kartu magic (hf mf cview)")
+        b_verify.clicked.connect(self.on_clone_verify)
+        g2.addWidget(b_verify)
+        lay.addWidget(box2)
+        self.clone_buttons += [b_gen1a, b_restore, b_verify]
+
+        # set UID
+        box3 = QtWidgets.QGroupBox("Set UID kartu magic Gen1a")
+        g3 = QtWidgets.QHBoxLayout(box3)
+        self.uid_edit = QtWidgets.QLineEdit()
+        self.uid_edit.setPlaceholderText("hex tanpa pemisah, mis. 2CD72F90")
+        g3.addWidget(self.uid_edit, 1)
+        b_uid = QtWidgets.QPushButton("Set UID")
+        b_uid.clicked.connect(self.on_clone_set_uid)
+        g3.addWidget(b_uid)
+        self.clone_buttons.append(b_uid)
+        lay.addWidget(box3)
+
+        lay.addStretch(1)
         return w
 
     # ---------- tab Firmware ----------
@@ -189,9 +273,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _port(self) -> str | None:
         return self.port_edit.text().strip() or None
 
-    def _pick_into(self, edit: QtWidgets.QLineEdit) -> None:
+    def _pick_into(self, edit: QtWidgets.QLineEdit,
+                   filt: str = "ELF (*.elf);;Semua file (*.*)") -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Pilih file firmware", "", "ELF (*.elf);;Semua file (*.*)")
+            self, "Pilih file", "", filt)
         if path:
             edit.setText(path)
 
@@ -211,7 +296,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.output.moveCursor(QtGui.QTextCursor.End)
 
     def _set_busy(self, busy: bool, msg: str = "") -> None:
-        for b in self.reader_buttons + self.fw_buttons:
+        for b in self.reader_buttons + self.clone_buttons + self.fw_buttons:
             b.setEnabled(not busy)
         self.progress.setVisible(busy)
         self.statusBar().showMessage(msg or ("Menjalankan…" if busy else "Siap."))
@@ -315,6 +400,88 @@ class MainWindow(QtWidgets.QMainWindow):
             emit(res.stdout or res.stderr)
         self._start("Dump", job)
 
+    # ---------- aksi Clone ----------
+    def on_clone_info(self) -> None:
+        def job(emit):
+            c = self._client(); self._guard_client(emit, c)
+            data = clone.card_info(c)
+            if data["magic"]:
+                emit(f"Kartu MAGIC terdeteksi: {', '.join(data['generations'])}\n", "ok")
+                emit("Bisa dipakai untuk clone UID yang sama.\n", "ok")
+            else:
+                emit("Bukan kartu magic (atau tidak terdeteksi).\n", "err")
+                emit("Kartu MIFARE Classic biasa TIDAK bisa mengubah UID. "
+                     "Isi data tetap bisa ditulis via Restore, tapi UID tetap bawaan.\n")
+            emit("\n" + data["raw"])
+        self._start("Deteksi magic", job)
+
+    def on_clone_wipe(self) -> None:
+        if not self._confirm("Wipe kartu magic Gen1a ke kondisi kosong?"):
+            return
+
+        def job(emit):
+            c = self._client(); self._guard_client(emit, c)
+            res = clone.wipe_gen1a(c)
+            emit(res.stdout or res.stderr, "" if res.ok else "err")
+        self._start("Wipe Gen1a", job)
+
+    def _dump_path(self) -> str | None:
+        return self.dump_edit.text().strip() or None
+
+    def on_clone_gen1a(self) -> None:
+        dump = self._dump_path()
+        if not dump:
+            self._append("Pilih file dump sumber dulu.\n", "err")
+            return
+        if not self._confirm(
+                "Tulis SELURUH dump (termasuk UID) ke kartu magic Gen1a?\n"
+                "Tempelkan CHIP BARU (magic) di antena."):
+            return
+
+        def job(emit):
+            c = self._client(); self._guard_client(emit, c)
+            res = clone.clone_to_gen1a(c, dump)
+            emit(res.stdout or res.stderr, "" if res.ok else "err")
+        self._start("Clone ke Gen1a", job)
+
+    def on_clone_restore(self) -> None:
+        dump = self._dump_path()
+        key = self.key_edit.text().strip() or None
+        wb0 = self.wb0_check.isChecked()
+        if not self._confirm(
+                "Tulis data dump ke kartu memakai key?\n"
+                "Tempelkan CHIP BARU di antena."
+                + ("\n(Termasuk blok 0/UID — hanya berhasil di Gen2/CUID.)"
+                   if wb0 else "")):
+            return
+
+        def job(emit):
+            c = self._client(); self._guard_client(emit, c)
+            res = clone.restore_dump(c, dumpfile=dump, keyfile=key, write_block0=wb0)
+            emit(res.stdout or res.stderr, "" if res.ok else "err")
+        self._start("Restore dump", job)
+
+    def on_clone_verify(self) -> None:
+        def job(emit):
+            c = self._client(); self._guard_client(emit, c)
+            data = clone.verify_clone(c, self._dump_path() or "")
+            emit(data["raw"], "" if data["ok"] else "err")
+        self._start("Verifikasi", job)
+
+    def on_clone_set_uid(self) -> None:
+        uid = self.uid_edit.text().strip()
+        if not uid:
+            self._append("Isi UID dulu (hex, mis. 2CD72F90).\n", "err")
+            return
+        if not self._confirm(f"Set UID kartu magic Gen1a menjadi {uid}?"):
+            return
+
+        def job(emit):
+            c = self._client(); self._guard_client(emit, c)
+            res = clone.set_magic_uid(c, uid)
+            emit(res.stdout or res.stderr, "" if res.ok else "err")
+        self._start("Set UID", job)
+
     # ---------- aksi Firmware ----------
     def on_find_fw(self) -> None:
         def job(emit):
@@ -334,6 +501,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 emit("\nTidak ada firmware .elf ditemukan. Build dari source "
                      "atau tunjukkan path-nya manual.\n", "err")
         self._start("Temukan firmware", job)
+
+    def _confirm(self, text: str) -> bool:
+        r = QtWidgets.QMessageBox.question(
+            self, "Konfirmasi", text,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        return r == QtWidgets.QMessageBox.Yes
 
     def _confirm_flash(self, what: str) -> bool:
         r = QtWidgets.QMessageBox.question(
