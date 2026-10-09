@@ -1,10 +1,4 @@
 @echo off
-REM ===========================================================
-REM  Launcher pm3tool GUI untuk Windows + ProxSpace.
-REM  Menjalankan GUI di Windows biasa, tapi otomatis mengarahkan
-REM  ke proxmark3.exe milik ProxSpace + DLL-nya, jadi tombol
-REM  Reader/Recover/Clone langsung bisa dipakai.
-REM ===========================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
@@ -14,65 +8,70 @@ set "PROXSPACE=C:\ProxSpace"
 echo ============================================
 echo    pm3tool - Proxmark3 RFID Tool (GUI)
 echo ============================================
-echo [INFO] ProxSpace: %PROXSPACE%
+echo ProxSpace: %PROXSPACE%
+echo.
 
-if not exist "%PROXSPACE%" (
-  echo [ERROR] Folder ProxSpace tidak ada di "%PROXSPACE%".
-  echo         Edit baris 'set "PROXSPACE=..."' di run_pm3.bat.
-  pause
-  exit /b 1
-)
+if not exist "%PROXSPACE%" goto :no_proxspace
 
-REM --- cari client proxmark3.exe ---
+REM --- cari proxmark3.exe ---
 set "PM3_BINARY="
-for %%D in (
-  "%PROXSPACE%\pm3\proxmark3\client\proxmark3.exe"
-  "%PROXSPACE%\pm3\proxmark3\proxmark3.exe"
-) do (
-  if not defined PM3_BINARY if exist "%%~D" set "PM3_BINARY=%%~D"
-)
-if not defined PM3_BINARY (
-  echo [INFO] Mencari proxmark3.exe di %PROXSPACE% (sebentar) ...
-  for /r "%PROXSPACE%" %%F in (proxmark3.exe) do (
-    if not defined PM3_BINARY set "PM3_BINARY=%%~fF"
-  )
-)
-if not defined PM3_BINARY (
-  echo [ERROR] proxmark3.exe tidak ditemukan. Pastikan sudah 'make' di ProxSpace.
-  pause
-  exit /b 1
-)
+if exist "%PROXSPACE%\pm3\proxmark3\client\proxmark3.exe" set "PM3_BINARY=%PROXSPACE%\pm3\proxmark3\client\proxmark3.exe"
+if not defined PM3_BINARY if exist "%PROXSPACE%\pm3\proxmark3\proxmark3.exe" set "PM3_BINARY=%PROXSPACE%\pm3\proxmark3\proxmark3.exe"
+if defined PM3_BINARY goto :have_bin
 
-REM --- folder DLL MinGW + port default ---
+echo Mencari proxmark3.exe (sebentar) ...
+for /r "%PROXSPACE%" %%F in (proxmark3.exe) do if not defined PM3_BINARY set "PM3_BINARY=%%~fF"
+if not defined PM3_BINARY goto :no_bin
+
+:have_bin
 set "PM3_PATH_ADD=%PROXSPACE%\msys2\mingw64\bin"
 if not defined PM3_PORT set "PM3_PORT=com10"
-
-echo [INFO] Client : !PM3_BINARY!
-echo [INFO] DLL    : !PM3_PATH_ADD!
-echo [INFO] Port   : !PM3_PORT!
+echo Client : !PM3_BINARY!
+echo DLL    : !PM3_PATH_ADD!
+echo Port   : !PM3_PORT!
+echo.
 
 REM --- cari Python ---
 set "PYEXE="
-for %%P in ("py -3" "py" "python" "python3") do (
-  if not defined PYEXE ( %%~P --version >nul 2>nul && set "PYEXE=%%~P" )
-)
-if not defined PYEXE (
-  echo [ERROR] Python tidak ada di PATH. Install dari python.org (centang Add to PATH).
-  pause
-  exit /b 1
-)
+for %%P in ("py -3" "py" "python" "python3") do if not defined PYEXE (%%~P --version >nul 2>nul && set "PYEXE=%%~P")
+if not defined PYEXE goto :no_python
+echo Python : !PYEXE!
+echo.
 
 REM --- pastikan PySide6 ---
 !PYEXE! -c "import PySide6" >nul 2>nul
-if errorlevel 1 (
-  echo [INFO] Memasang PySide6 (sekali saja) ...
-  !PYEXE! -m pip install PySide6 || ( echo [ERROR] gagal install PySide6 & pause & exit /b 1 )
-)
+if not errorlevel 1 goto :launch
+echo Memasang PySide6 (sekali saja, perlu internet) ...
+!PYEXE! -m pip install PySide6
+if errorlevel 1 goto :no_qt
 
-REM --- tambahkan DLL ke PATH lalu jalankan GUI ---
+:launch
 set "PATH=%PM3_PATH_ADD%;%PATH%"
-echo [INFO] Menjalankan GUI ... (tutup sesi 'pm3 -->' interaktif dulu bila terbuka)
+echo Menjalankan GUI ... (tutup sesi 'pm3 --^>' interaktif dulu bila terbuka)
 !PYEXE! -m pm3tool gui
-if errorlevel 1 ( echo. & echo [ERROR] GUI gagal. & pause )
+echo.
+echo GUI ditutup (kode keluar %errorlevel%).
+goto :end
 
-endlocal
+:no_proxspace
+echo [ERROR] Folder ProxSpace tidak ada di "%PROXSPACE%".
+echo         Buka file ini dengan Notepad dan ubah baris: set "PROXSPACE=..."
+goto :end
+
+:no_bin
+echo [ERROR] proxmark3.exe tidak ditemukan di %PROXSPACE%.
+echo         Pastikan sudah di-compile ('make') di ProxSpace.
+goto :end
+
+:no_python
+echo [ERROR] Python tidak ada di PATH.
+echo         Install dari https://www.python.org/downloads/ (centang "Add Python to PATH").
+goto :end
+
+:no_qt
+echo [ERROR] Gagal memasang PySide6. Cek koneksi internet, lalu coba lagi.
+goto :end
+
+:end
+echo.
+pause
