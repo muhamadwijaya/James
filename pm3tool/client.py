@@ -66,7 +66,7 @@ class PM3Client:
         joined = "; ".join(commands)
         argv = [self.binary]
         if self.port:
-            argv.append(self.port)
+            argv += ["-p", self.port]   # cocok dgn `pm3 -p com10`
         argv += ["-c", joined]
 
         proc = subprocess.run(
