@@ -1,0 +1,141 @@
+"""Antarmuka baris perintah untuk pm3tool.
+
+Contoh:
+    python -m pm3tool scan
+    python -m pm3tool read-hf
+    python -m pm3tool read-lf
+    python -m pm3tool recover-keys --dict my_keys.dic
+    python -m pm3tool dump --keyfile hf-mf-ABCD1234-key.bin
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from .client import PM3Client, PM3NotFound
+from . import scanner
+
+
+def _print_identity(title: str, ident: dict) -> None:
+    print(f"\n=== {title} ===")
+    for field in ("uid", "atqa", "sak", "id"):
+        if field in ident and ident[field]:
+            print(f"  {field.upper():5}: {ident[field]}")
+
+
+def _make_client(args: argparse.Namespace) -> PM3Client:
+    return PM3Client(binary=args.binary, port=args.port, timeout=args.timeout)
+
+
+def cmd_check(args) -> int:
+    res = scanner.check_device(_make_client(args))
+    print(res.stdout or res.stderr)
+    return 0 if res.ok else 1
+
+
+def cmd_scan(args) -> int:
+    data = scanner.scan_auto(_make_client(args))
+    _print_identity("HF (13.56 MHz)", data["hf"])
+    if data["lf_em410x"]:
+        print("\n=== LF (125 kHz) ===")
+        print(f"  EM410x ID: {data['lf_em410x']}")
+    if args.raw:
+        print("\n--- RAW HF ---\n" + data["hf_raw"])
+        print("\n--- RAW LF ---\n" + data["lf_raw"])
+    return 0
+
+
+def cmd_read_hf(args) -> int:
+    data = scanner.read_hf_14a(_make_client(args))
+    _print_identity("ISO14443-A", data)
+    if args.raw:
+        print("\n" + data["raw"])
+    return 0
+
+
+def cmd_read_lf(args) -> int:
+    data = scanner.read_lf_em410x(_make_client(args))
+    if data["id"]:
+        print(f"EM410x ID: {data['id']}")
+    else:
+        print("Tidak ada kartu LF terdeteksi.")
+        if args.raw:
+            print(data["raw"])
+    return 0
+
+
+def cmd_recover(args) -> int:
+    print("Menjalankan hf mf autopwn — ini bisa memakan waktu "
+          "(hardnested bisa beberapa menit). Jangan lepas kartu dari antena.\n")
+    data = scanner.recover_mifare_keys(
+        _make_client(args), dictionary=args.dict, timeout=args.timeout
+    )
+    if data["keys"]:
+        print("Key yang ditemukan:")
+        print(f"  {'Sektor':>6} | Tipe | Key")
+        for k in data["keys"]:
+            print(f"  {k['sector']:>6} |  {k['type']}   | {k['key']}")
+    else:
+        print("Belum ada key yang berhasil dipulihkan.")
+    if args.raw or not data["keys"]:
+        print("\n--- RAW ---\n" + data["raw"])
+    return 0 if data["ok"] else 1
+
+
+def cmd_dump(args) -> int:
+    res = scanner.dump_mifare(_make_client(args), keyfile=args.keyfile)
+    print(res.stdout or res.stderr)
+    return 0 if res.ok else 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="pm3tool",
+        description="Wrapper Proxmark3 untuk membaca RFID, menampilkan "
+                    "data, dan memulihkan key MIFARE pada kartu sendiri.",
+    )
+    p.add_argument("--binary", default="pm3", help="Executable client PM3.")
+    p.add_argument("--port", default=None,
+                   help="Port serial, mis. /dev/ttyACM0 atau COM3.")
+    p.add_argument("--timeout", type=float, default=30.0,
+                   help="Timeout per perintah (detik).")
+    p.add_argument("--raw", action="store_true",
+                   help="Tampilkan juga output mentah PM3.")
+
+    sub = p.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("check", help="Cek koneksi & tuning antena.").set_defaults(func=cmd_check)
+    sub.add_parser("scan", help="Deteksi otomatis LF + HF.").set_defaults(func=cmd_scan)
+    sub.add_parser("read-hf", help="Baca kartu 13.56 MHz.").set_defaults(func=cmd_read_hf)
+    sub.add_parser("read-lf", help="Baca kartu 125 kHz EM410x.").set_defaults(func=cmd_read_lf)
+
+    rec = sub.add_parser("recover-keys",
+                         help="Pulihkan key MIFARE Classic (autopwn).")
+    rec.add_argument("--dict", default=None, help="File dictionary key opsional.")
+    rec.set_defaults(func=cmd_recover, timeout=600.0)
+
+    dmp = sub.add_parser("dump", help="Dump isi MIFARE memakai key diketahui.")
+    dmp.add_argument("--keyfile", default=None, help="File .bin key dari autopwn.")
+    dmp.set_defaults(func=cmd_dump)
+
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    # recover-keys punya timeout default sendiri (600s) lewat set_defaults,
+    # tapi flag global --timeout tetap bisa menimpanya bila diberikan.
+    try:
+        return args.func(args)
+    except PM3NotFound as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        print("\nDibatalkan.", file=sys.stderr)
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
