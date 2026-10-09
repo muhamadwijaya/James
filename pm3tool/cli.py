@@ -11,6 +11,7 @@ Contoh:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from .client import PM3Client, PM3NotFound
@@ -190,9 +191,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Wrapper Proxmark3 untuk membaca RFID, menampilkan "
                     "data, dan memulihkan key MIFARE pada kartu sendiri.",
     )
-    p.add_argument("--binary", default="pm3", help="Executable client PM3.")
-    p.add_argument("--port", default=None,
-                   help="Port serial, mis. /dev/ttyACM0 atau COM3.")
+    p.add_argument("--binary", default=os.environ.get("PM3_BINARY", "pm3"),
+                   help="Executable client PM3 (atau set env PM3_BINARY).")
+    p.add_argument("--port", default=os.environ.get("PM3_PORT"),
+                   help="Port serial, mis. COM10 (atau set env PM3_PORT).")
     p.add_argument("--timeout", type=float, default=30.0,
                    help="Timeout per perintah (detik).")
     p.add_argument("--raw", action="store_true",

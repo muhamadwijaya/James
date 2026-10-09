@@ -15,6 +15,7 @@ terpisah agar jendela tetap responsif.
 
 from __future__ import annotations
 
+import os
 import sys
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -84,7 +85,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_connbar(self) -> QtWidgets.QHBoxLayout:
         bar = QtWidgets.QHBoxLayout()
         bar.addWidget(QtWidgets.QLabel("Binary:"))
-        self.binary_edit = QtWidgets.QLineEdit("pm3")
+        self.binary_edit = QtWidgets.QLineEdit(os.environ.get("PM3_BINARY", "pm3"))
         self.binary_edit.setMaximumWidth(180)
         self.binary_edit.setToolTip(
             "Path ke client Proxmark3 (pm3 / pm3.bat / pm3.exe). "
@@ -96,7 +97,7 @@ class MainWindow(QtWidgets.QMainWindow):
         bar.addWidget(browse)
 
         bar.addWidget(QtWidgets.QLabel("Port:"))
-        self.port_edit = QtWidgets.QLineEdit()
+        self.port_edit = QtWidgets.QLineEdit(os.environ.get("PM3_PORT", ""))
         self.port_edit.setPlaceholderText("kosong = auto (mis. COM3 / /dev/ttyACM0)")
         bar.addWidget(self.port_edit, 1)
 

@@ -7,6 +7,7 @@ sendiri — hanya mengotomasi perintah yang biasa Anda ketik manual.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -49,7 +50,58 @@ class PM3Client:
         self.timeout = timeout
 
     def available(self) -> bool:
+        # bisa berupa path lengkap (mis. proxmark3.exe) atau nama di PATH
+        if os.path.isfile(self.binary):
+            return True
         return shutil.which(self.binary) is not None
+
+    def _is_wrapper(self) -> bool:
+        """True jika binary adalah launcher `pm3`/`pm3.bat`, bukan exe mentah.
+
+        Launcher `pm3` memakai flag `-p <port>`; client mentah
+        `proxmark3(.exe)` memakai port sebagai argumen posisional.
+        """
+        exe = os.path.basename(self.binary).lower()
+        return exe == "pm3" or exe.startswith("pm3.")
+
+    def _build_argv(self, commands: tuple[str, ...]) -> tuple[list[str], str]:
+        joined = "; ".join(commands)
+        argv = [self.binary]
+        if self.port:
+            argv += (["-p", self.port] if self._is_wrapper() else [self.port])
+        argv += ["-c", joined]
+        return argv, joined
+
+    def _find_mingw_bin(self) -> str | None:
+        """Cari folder DLL MinGW (msys2/mingw64/bin) relatif ke binary.
+
+        Agar `proxmark3.exe` hasil ProxSpace bisa jalan di Windows biasa.
+        """
+        if not os.path.isfile(self.binary):
+            return None
+        d = os.path.dirname(os.path.abspath(self.binary))
+        for _ in range(7):
+            cand = os.path.join(d, "msys2", "mingw64", "bin")
+            if os.path.isdir(cand):
+                return cand
+            parent = os.path.dirname(d)
+            if parent == d:
+                break
+            d = parent
+        return None
+
+    def _augmented_env(self) -> dict:
+        env = os.environ.copy()
+        extra: list[str] = []
+        manual = os.environ.get("PM3_PATH_ADD")
+        if manual:
+            extra.append(manual)
+        auto = self._find_mingw_bin()
+        if auto and auto not in extra:
+            extra.append(auto)
+        if extra:
+            env["PATH"] = os.pathsep.join(extra) + os.pathsep + env.get("PATH", "")
+        return env
 
     def run(self, *commands: str, timeout: float | None = None) -> PM3Result:
         """Jalankan satu atau beberapa perintah client PM3 lalu keluar.
@@ -63,17 +115,14 @@ class PM3Client:
                 "Install/compile Proxmark3 Iceman dan pastikan ada di PATH."
             )
 
-        joined = "; ".join(commands)
-        argv = [self.binary]
-        if self.port:
-            argv += ["-p", self.port]   # cocok dgn `pm3 -p com10`
-        argv += ["-c", joined]
+        argv, joined = self._build_argv(commands)
 
         proc = subprocess.run(
             argv,
             capture_output=True,
             text=True,
             timeout=timeout or self.timeout,
+            env=self._augmented_env(),
         )
         return PM3Result(
             command=joined,

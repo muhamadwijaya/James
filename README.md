@@ -46,8 +46,18 @@ arahkan ke `pm3`/`pm3.bat`/`pm3.exe` (atau isi `pm3` jika sudah di PATH).
 GUI utama memakai **PySide6 (Qt)**.
 
 **Cara termudah — tinggal dobel-klik:**
-- **Windows:** `run.bat` (otomatis cek Python, pasang PySide6, lalu buka GUI).
+- **Windows + ProxSpace (disarankan): `run_pm3.bat`.** Otomatis menemukan
+  `proxmark3.exe` milik ProxSpace + DLL-nya, menyetel port `com10`, lalu
+  membuka GUI yang **langsung bisa dipakai** (Reader/Recover/Clone jalan
+  tanpa perlu buka shell ProxSpace). Jika ProxSpace Anda bukan di
+  `C:\ProxSpace`, edit satu baris `set "PROXSPACE=..."` di atas file itu.
+  Catatan: tutup dulu sesi interaktif `pm3 -->` bila terbuka (satu COM port
+  hanya untuk satu program).
+- **Windows (hanya lihat dump / pm3 sudah di PATH):** `run.bat`.
 - **Linux/macOS:** `./run.sh`.
+
+> GUI juga membaca env `PM3_BINARY` dan `PM3_PORT` untuk mengisi otomatis
+> kolom Binary & Port. `run_pm3.bat` menyetel keduanya untuk Anda.
 
 **Manual:**
 ```bash
