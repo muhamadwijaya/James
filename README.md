@@ -16,9 +16,30 @@ kemampuan pemulihan key berasal dari firmware Iceman.
 ## Prasyarat
 
 1. Perangkat **Proxmark3** + antena.
-2. Client **Iceman/RRG** terpasang, dan executable `pm3` ada di `PATH`.
-   Lihat <https://github.com/RfidResearchGroup/proxmark3>.
+2. **WAJIB: client Proxmark3 (`pm3` / `pm3.exe` / `pm3.bat`) sudah terpasang.**
+   pm3tool hanya *memanggil* client ini — tanpa `pm3`, tidak ada yang jalan.
+   Catatan: COM port yang muncul di Windows **belum** berarti client ada.
 3. Python 3.10+.
+
+### Memasang client `pm3`
+
+- **Windows (disarankan: ProxSpace):**
+  1. Unduh **ProxSpace**: <https://github.com/Gator96100/ProxSpace> → Releases.
+  2. Ekstrak ke path pendek tanpa spasi, mis. `C:\ProxSpace`.
+  3. Jalankan `runme64.bat` → terminal ProxSpace terbuka.
+  4. Build client + firmware:
+     ```
+     git clone https://github.com/RfidResearchGroup/proxmark3.git
+     cd proxmark3
+     make clean && make -j
+     ```
+     Menghasilkan `pm3` (client) + `bootrom.elf`/`fullimage.elf` (firmware).
+  5. Flash: `pm3-flash-all`. Tes: `pm3 -p com10`.
+- **Linux/macOS:** ikuti <https://github.com/RfidResearchGroup/proxmark3>
+  (`make clean && make -j && sudo make install`).
+
+Setelah `pm3` ada, di GUI klik **Browse…** di sebelah kolom *Binary* dan
+arahkan ke `pm3`/`pm3.bat`/`pm3.exe` (atau isi `pm3` jika sudah di PATH).
 
 ## Pemakaian — GUI (tampilan grafis)
 

@@ -85,8 +85,15 @@ class MainWindow(QtWidgets.QMainWindow):
         bar = QtWidgets.QHBoxLayout()
         bar.addWidget(QtWidgets.QLabel("Binary:"))
         self.binary_edit = QtWidgets.QLineEdit("pm3")
-        self.binary_edit.setMaximumWidth(120)
+        self.binary_edit.setMaximumWidth(180)
+        self.binary_edit.setToolTip(
+            "Path ke client Proxmark3 (pm3 / pm3.bat / pm3.exe). "
+            "Pakai 'pm3' jika sudah di PATH, atau Browse ke lokasinya.")
         bar.addWidget(self.binary_edit)
+        browse = QtWidgets.QPushButton("Browse…")
+        browse.setToolTip("Pilih file pm3 / pm3.bat / pm3.exe dari ProxSpace.")
+        browse.clicked.connect(self._pick_binary)
+        bar.addWidget(browse)
 
         bar.addWidget(QtWidgets.QLabel("Port:"))
         self.port_edit = QtWidgets.QLineEdit()
@@ -97,6 +104,13 @@ class MainWindow(QtWidgets.QMainWindow):
         clear.clicked.connect(self.output_clear)
         bar.addWidget(clear)
         return bar
+
+    def _pick_binary(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Pilih client Proxmark3 (pm3 / pm3.bat / pm3.exe)", "",
+            "Proxmark3 client (pm3 pm3.bat pm3.exe);;Semua file (*.*)")
+        if path:
+            self.binary_edit.setText(path)
 
     # ---------- tab Reader ----------
     def _build_reader_tab(self) -> QtWidgets.QWidget:
@@ -406,8 +420,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _guard_client(self, emit, client: PM3Client) -> None:
         if not client.available():
             raise PM3NotFound(
-                f"Executable '{client.binary}' tidak ditemukan di PATH. "
-                "Install client Proxmark3 Iceman dulu.")
+                f"Client Proxmark3 '{client.binary}' tidak ditemukan.\n"
+                "COM port terdeteksi TIDAK cukup — Anda perlu program client "
+                "'pm3' (pm3.exe/pm3.bat).\n"
+                "Di Windows: pasang lewat ProxSpace "
+                "(github.com/Gator96100/ProxSpace), lalu klik 'Browse…' di "
+                "sebelah kolom Binary dan arahkan ke pm3.bat/pm3.exe.")
 
     # ---------- aksi Reader ----------
     def on_check(self) -> None:
