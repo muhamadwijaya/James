@@ -1,0 +1,19 @@
+{
+  "source": "Reconstructed byte-for-byte from the two complete unused-chip dumps supplied by the user on 2026-10-10. No application fields or checksums inferred.",
+  "presets": [
+    {
+      "uid": "C2A4DA95",
+      "product": "BKA236T",
+      "dump": "hf-mf-C2A4DA95-unused.bin",
+      "sha256": "9373f5574774534be530b0234106dec0c647062872d447e2f790453d3e901a69",
+      "size": 1024
+    },
+    {
+      "uid": "D2E2DC95",
+      "product": "BKA236T",
+      "dump": "hf-mf-D2E2DC95-unused.bin",
+      "sha256": "b9b31c8bfc2b4258fe1b81315a83dbec85286752239c7d4a517adcfd21773fe1",
+      "size": 1024
+    }
+  ]
+}

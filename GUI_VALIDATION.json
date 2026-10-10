@@ -1,0 +1,20 @@
+{
+  "tests_passed": 181,
+  "reference_size": [
+    1536,
+    1024
+  ],
+  "compact_size": [
+    1100,
+    800
+  ],
+  "modified_original_files": [
+    "pm3tool/gui_qt.py",
+    "pyproject.toml"
+  ],
+  "modified_original_methods": [
+    "__init__"
+  ],
+  "reference_asset_count": 54,
+  "hardware_tested": false
+}

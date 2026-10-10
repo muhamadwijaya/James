@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pm3tool"
+version = "0.3.0"
+description = "Wrapper Proxmark3 untuk membaca RFID, menampilkan data, dan memulihkan key MIFARE pada kartu sendiri."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+pm3tool = "pm3tool.cli:main"
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+test = ["pytest"]
+
+[tool.setuptools]
+packages = ["pm3tool"]
+
+[tool.setuptools.package-data]
+pm3tool = ["ink_references/*.bin", "ink_references/*.json", "ui_assets/*.svg", "ui_assets/*.png", "ui_assets/*.otf", "ui_assets/*.ttf", "ui_assets/*.json", "ui_assets/*.txt"]

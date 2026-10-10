@@ -1,0 +1,496 @@
+{
+  "brand": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      24,
+      3,
+      355,
+      77
+    ]
+  },
+  "nav_reader": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      44,
+      158,
+      78,
+      192
+    ]
+  },
+  "nav_dump": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      203,
+      158,
+      238,
+      192
+    ]
+  },
+  "nav_clone": {
+    "source": "Dark Dump Viewer Interface(1).png",
+    "crop": [
+      400,
+      158,
+      438,
+      193
+    ]
+  },
+  "nav_edit": {
+    "source": "Dark Dump Viewer Interface(1).png",
+    "crop": [
+      574,
+      158,
+      610,
+      193
+    ]
+  },
+  "nav_firmware": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      839,
+      157,
+      878,
+      194
+    ]
+  },
+  "nav_key": {
+    "source": "Dark Dump Viewer Interface(1).png",
+    "crop": [
+      1020,
+      158,
+      1059,
+      194
+    ]
+  },
+  "nav_ink": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      1236,
+      159,
+      1275,
+      193
+    ]
+  },
+  "calendar": {
+    "source": "Neon RFID Chip Writing Dashboard(1).png",
+    "crop": [
+      724,
+      446,
+      747,
+      468
+    ]
+  },
+  "magic": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      990,
+      230,
+      1033,
+      273
+    ]
+  },
+  "target": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      871,
+      307,
+      918,
+      352
+    ]
+  },
+  "clone_copy": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      310,
+      545,
+      357,
+      593
+    ]
+  },
+  "reader_key": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      286,
+      568,
+      327,
+      609
+    ]
+  },
+  "radio": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      45,
+      224,
+      98,
+      271
+    ]
+  },
+  "key": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      43,
+      445,
+      96,
+      492
+    ]
+  },
+  "monitor": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      44,
+      650,
+      95,
+      694
+    ]
+  },
+  "terminal": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      41,
+      726,
+      95,
+      773
+    ]
+  },
+  "file": {
+    "source": "Dark Dump Viewer Interface(1).png",
+    "crop": [
+      43,
+      221,
+      91,
+      269
+    ]
+  },
+  "layers": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      42,
+      222,
+      98,
+      276
+    ]
+  },
+  "edit": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      43,
+      495,
+      88,
+      537
+    ]
+  },
+  "gear": {
+    "source": "Neon write data recycle dashboard(1).png",
+    "crop": [
+      1029,
+      219,
+      1071,
+      259
+    ]
+  },
+  "chip": {
+    "source": "Proxmark3 Firmware Control Dashboard(1).png",
+    "crop": [
+      43,
+      218,
+      96,
+      269
+    ]
+  },
+  "ink": {
+    "source": "Neon RFID Chip Writing Dashboard(1).png",
+    "crop": [
+      42,
+      216,
+      100,
+      275
+    ]
+  },
+  "card": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      918,
+      390,
+      1041,
+      486
+    ]
+  },
+  "device": {
+    "source": "Proxmark3 Firmware Control Dashboard(1).png",
+    "crop": [
+      1043,
+      510,
+      1131,
+      598
+    ]
+  },
+  "database": {
+    "source": "Proxmark3 Recovery Keys Dashboard(1).png",
+    "crop": [
+      443,
+      302,
+      489,
+      352
+    ]
+  },
+  "check": {
+    "source": "Proxmark3 Recovery Keys Dashboard(1).png",
+    "crop": [
+      64,
+      301,
+      116,
+      354
+    ]
+  },
+  "missing": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      609,
+      923,
+      657,
+      972
+    ]
+  },
+  "empty": {
+    "source": "Neon write data recycle dashboard(1).png",
+    "crop": [
+      739,
+      647,
+      800,
+      711
+    ]
+  },
+  "monitor_button": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      199,
+      289,
+      246,
+      333
+    ]
+  },
+  "search": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      677,
+      290,
+      718,
+      334
+    ]
+  },
+  "wave": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      1191,
+      291,
+      1234,
+      334
+    ]
+  },
+  "key_button": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      654,
+      358,
+      697,
+      402
+    ]
+  },
+  "file_button": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      1197,
+      358,
+      1239,
+      404
+    ]
+  },
+  "copy": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      1117,
+      733,
+      1156,
+      766
+    ]
+  },
+  "trash": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      1243,
+      733,
+      1280,
+      766
+    ]
+  },
+  "save": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      1379,
+      733,
+      1417,
+      766
+    ]
+  },
+  "folder": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "crop": [
+      1340,
+      944,
+      1386,
+      986
+    ]
+  },
+  "play": {
+    "source": "Neon RFID Chip Writing Dashboard(1).png",
+    "crop": [
+      140,
+      533,
+      164,
+      554
+    ]
+  },
+  "stop": {
+    "source": "Neon RFID Chip Writing Dashboard(1).png",
+    "crop": [
+      916,
+      525,
+      952,
+      560
+    ]
+  },
+  "refresh": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      1358,
+      99,
+      1388,
+      130
+    ]
+  },
+  "trace": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "crop": [
+      1044,
+      566,
+      1084,
+      609
+    ]
+  },
+  "download": {
+    "source": "Proxmark3 Firmware Control Dashboard(1).png",
+    "crop": [
+      1283,
+      702,
+      1310,
+      733
+    ]
+  },
+  "shield": {
+    "source": "Neon write data recycle dashboard(1).png",
+    "crop": [
+      1041,
+      399,
+      1079,
+      437
+    ]
+  },
+  "warning": {
+    "source": "Proxmark3 Firmware Control Dashboard(1).png",
+    "crop": [
+      60,
+      283,
+      94,
+      314
+    ]
+  },
+  "eye": {
+    "source": "Dark Dump Viewer Interface(1).png",
+    "crop": [
+      1344,
+      285,
+      1372,
+      310
+    ]
+  },
+  "panel": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "frame": [
+      25,
+      210,
+      1513,
+      424
+    ],
+    "slice": 10
+  },
+  "button": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "frame": [
+      45,
+      283,
+      527,
+      341
+    ],
+    "slice": 10
+  },
+  "primary": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "frame": [
+      45,
+      561,
+      761,
+      616
+    ],
+    "slice": 10
+  },
+  "disabled": {
+    "source": "Neon write data recycle dashboard(1).png",
+    "frame": [
+      1321,
+      549,
+      1499,
+      594
+    ],
+    "slice": 10
+  },
+  "danger": {
+    "source": "Dark neon RFID clone interface(1).png",
+    "frame": [
+      1227,
+      224,
+      1495,
+      279
+    ],
+    "slice": 10
+  },
+  "field": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "frame": [
+      215,
+      510,
+      1493,
+      550
+    ],
+    "slice": 7
+  },
+  "tab": {
+    "source": "Emerald RFID reader dashboard(1).png",
+    "frame": [
+      191,
+      151,
+      383,
+      199
+    ],
+    "slice": 7
+  },
+  "tab_selected": {
+    "source": "Dark Dump Viewer Interface(1).png",
+    "frame": [
+      191,
+      151,
+      383,
+      199
+    ],
+    "slice": 7
+  }
+}
