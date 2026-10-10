@@ -1,0 +1,116 @@
+PM3TOOL v0.3.0 - KODE BK / TANGGAL KUSTOM + PM3/COM OTOMATIS
+
+1. Ekstrak seluruh isi ZIP ke satu folder.
+2. Sambungkan perangkat Proxmark3 ke USB komputer.
+3. Klik dua kali run_pm3.bat (run.bat juga dapat digunakan).
+4. Aplikasi mencari client di C:\ProxSpace\pm3\proxmark3 dan mengisi
+   kolom PM3 serta Port secara otomatis.
+5. Klik Check device untuk memeriksa koneksi.
+
+Tidak perlu menentukan COM10. Nomor COM mengikuti perangkat terpasang.
+Jika USB dicabut lalu dipasang kembali, klik Auto Detect untuk memperbarui
+kolom koneksi. Mode otomatis juga mencari ulang port sebelum perintah
+Reader dijalankan. Port yang diketik manual tetap dipakai sampai Anda
+menekan Auto Detect atau mengosongkan kolom Port.
+
+Persyaratan: Python 3.10+ dan client Proxmark3 yang sudah dibangun.
+Pada pemakaian pertama, launcher memasang PySide6 jika belum tersedia
+(memerlukan internet). Jika beberapa PM3 terpasang, pilih satu port dari
+daftar di log. Jika client tidak ditemukan, gunakan Browse untuk memilih
+proxmark3.exe, misalnya pada folder client atau client\build.
+
+Pemeriksaan lewat Command Prompt di folder hasil ekstraksi:
+    python -m pm3tool detect
+
+Versi ini diuji dengan simulasi instalasi/port dan GUI Qt offscreen.
+Koneksi perangkat fisik pada komputer Windows pengguna belum diuji.
+
+WRITE CHIP INK BARU
+
+1. Buka tab Write Chip Ink Baru.
+2. Pilih acuan BKA236T - C2A4DA95 atau BKA236T - D2E2DC95.
+   Keduanya berasal dari dump chip ink belum terpakai yang Anda kirim.
+   Kode BK, tanggal, ASCII, data HEX 64 blok dan Key A/B terisi otomatis.
+   Untuk produk lain, gunakan Pilih dump dari chip belum terpakai produk itu.
+3. Isi Kode BK / produk (1-7 huruf kapital atau angka, misalnya BKA236T).
+   Pilih Tanggal chip melalui kalender atau ketik DD/MM/YYYY, tahun 2000-2099.
+   Contoh 10/10/2026: tanggal ASCII otomatis 261010; tanggal biner juga diubah.
+   HEX/ASCII mengikuti isian. Setiap edit membatalkan Preview sebelumnya.
+4. Tempelkan chip baru kosong. Key awal: FFFFFFFFFFFF di semua sektor.
+5. Pilih mode sesuai chip:
+   - Chip biasa: data blok 1-63 mengikuti form, key dari acuan. UID chip baru tetap.
+   - Magic Gen1a: seluruh 64 blok mengikuti form termasuk UID sumber.
+     Gunakan hanya chip Magic Gen1a yang mendukung perubahan blok 0.
+6. Klik 1. Baca chip kosong + Preview. Backup dibuat dan blok ditampilkan.
+7. Klik 2. Write Chip Baru dan tunggu TERVERIFIKASI.
+
+Tidak perlu membuat profil JSON atau menginput key satu per satu.
+Key CoDPaD / 436F44506144 mengikuti acuan pada sektor 1, 3, 4;
+sektor lain FFFFFFFFFFFF. Tombol Simpan data + key mengekspor hasil isian.
+Tanggal teks YYMMDD dan tanggal biner di blok 4-5 disinkronkan.
+Jika sektor 2 sudah menyalin sektor 1 pada acuan, kode/tanggal di situ ikut
+diubah; jika masih kosong, tetap kosong. Kode/tanggal acuan bawaan dapat
+dipakai tanpa perubahan untuk menyalin data asli.
+Blok 6 dan sektor 3/4 mengikuti acuan. Rumus CRC/MAC atau validasi aplikasi
+belum diketahui dan tidak dihitung ulang. Penerimaan data kustom oleh
+printer perlu diuji. Jenis tanggal mengikuti acuan; tidak otomatis berarti
+tanggal produksi atau kedaluwarsa. Perubahan kode tidak mengubah kapasitas.
+Hasil diperiksa dengan pembacaan ulang data dan autentikasi key baru.
+Hanya chip kosong (blok data 00, key FF, access bits FF0780) yang diterima.
+Chip berisi data akan ditolak oleh fitur ini.
+
+Folder ink_writes berisi backup, key sebelum/sesudah, expected.bin,
+journal.json dan after.bin. Hentikan berhenti setelah perintah aktif selesai.
+Jika terhenti, jangan anggap chip sudah lengkap; periksa blok di journal.
+Satu Preview hanya untuk satu Write. Penulisan ke chip fisik dan penerimaan
+oleh mesin ink belum diuji di sini. Data aplikasi mungkin terkait UID;
+mode chip biasa belum menjamin mesin menerima UID yang berbeda.
+
+RECOVERY KEYS
+
+Versi 0.1.1: recovery satu klik diperbaiki.
+1. Tempelkan kartu 1K pada antena PM3.
+2. Klik Recover Keys (dari kartu) di tab Reader atau Recover otomatis
+   di tab Recovery Keys.
+3. Tunggu hasil. Tidak perlu mengisi key, UID, dictionary, atau parameter.
+
+Tombol otomatis langsung menjalankan hf mf autopwn; tidak berhenti di Help.
+Isian lama/metode offline tidak memengaruhi recovery otomatis. Waktu berjalan
+dan log tampil saat proses berlangsung, lalu tabel key serta folder hasil
+muncul otomatis. Hentikan tersedia bila ingin membatalkan. Jika gagal,
+penyebab ditampilkan dan tombol dapat diklik kembali.
+
+Tab Recovery Keys menyediakan seluruh kelompok recovery MIFARE Classic
+RRG, diagnostik nonce, reader attack, script FM11RF08S, dan tool offline.
+Pilihan tersebut berada di Metode lanjutan (opsional). Gunakan Help metode
+untuk pilihan khusus client Anda, lalu isi parameter dan Jalankan metode pilihan.
+Batas waktu bawaan 120 menit; dapat diperpanjang. Output langsung, tombol
+Hentikan, dan log/report/dictionary per sesi tersedia di recovery_sessions.
+Untuk mengakhiri simulasi/sniff perangkat, tekan tombol PM3 bila diperlukan.
+
+Nested/staticnested perlu key valid; hardnested mendukung nonce offline.
+Reader attack memerlukan reader/transaksi. Tool/script menggunakan versi
+yang terpasang dalam ProxSpace, bukan dibundel dalam ZIP wrapper ini.
+Metode dari PM3 dan Daftar script memuat fitur dari client terpasang.
+Jumlah key ditemukan dan key sektor yang masih hilang dilaporkan terpisah.
+Tidak semua kartu/nonce dapat dipulihkan; kirim session.log dari percobaan
+yang gagal untuk pemeriksaan berikutnya.
+
+WRITE DATA / RECYCLE
+
+Tab baru: Write Data / Recycle (GUI Qt).
+Siapkan dump chip belum terpakai sebagai acuan, dump dan key chip target
+terbaru. Profil JSON tidak wajib: biarkan "Profil khusus (opsional)" kosong
+untuk menyalin semua blok data biasa. Hanya blok yang berbeda akan ditulis.
+
+Jika ingin memilih blok tertentu, tombol "Buat profil dari daftar blok..."
+dapat membuat profil JSON opsional. Untuk sebagian byte, mask 16 byte per blok
+berisi FF untuk byte yang disalin dan 00 untuk byte target yang dipertahankan.
+Klik Preview perubahan, periksa UID/blok/data, lalu Write Data.
+
+UID, key dan access bits target dipertahankan. Backup kartu terpasang dibuat
+sebelum menulis, dan seluruh hasil diverifikasi. Jika terjadi kegagalan,
+operasi berhenti dan status/backup tersedia dalam folder hasil.
+Setelah data cocok, penerimaan chip perlu diuji pada mesin pabrikan.
+Penyalinan memverifikasi byte, bukan status pemakaian pada mesin. Data yang
+terikat UID atau MAC/checksum tidak dihitung ulang. Uji chip setelah menulis.
