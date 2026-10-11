@@ -1,0 +1,17 @@
+# virtual environments
+.venv/
+venv/
+env/
+
+# python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
