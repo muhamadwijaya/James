@@ -26,6 +26,16 @@ namespace FtpBackend
         public int IdleTimeout = 600;
         public int DataTimeout = 60;
         public bool ShowHelp;
+
+        // Client mode
+        public string Mode = "server";
+        public string RemoteDir = "/";
+        public bool Recursive;
+        public int MaxDepth = 10;
+        public int Interval = 5;
+        public int Workers = 3;
+        public bool DeleteAfter;
+        public string Extensions = "jpg,jpeg,png,bmp";
     }
 
     internal static class Program
@@ -34,9 +44,12 @@ namespace FtpBackend
         public const string PasswordEnvironmentVariable = "FTPBRIDGE_PASSWORD";
 
         private const string Usage =
-            "FtpBackend " + Version + " - FTP server penerima foto + rename otomatis\n" +
+            "FtpBackend " + Version + " - terima foto via FTP + rename otomatis\n" +
             "\n" +
-            "  --ip <alamat>            IP yang didengarkan (default 0.0.0.0 = semua)\n" +
+            "  --mode server|client     server: kamera mengirim ke sini (default)\n" +
+            "                           client: ambil foto dari server FTP lain\n" +
+            "  --ip <alamat>            server: IP yang didengarkan (0.0.0.0 = semua)\n" +
+            "                           client: IP/host server FTP tujuan\n" +
             "  --port <n>               Port FTP (default 21)\n" +
             "  --user <nama>            Username FTP (default admin)\n" +
             "  --password <sandi>       Password FTP (atau env " + PasswordEnvironmentVariable + ")\n" +
@@ -48,6 +61,14 @@ namespace FtpBackend
             "  --keep-duplicates        Simpan duplikat ke subfolder _duplikat\n" +
             "  --pasv-min <n>           Port pasif minimum (0 = otomatis)\n" +
             "  --pasv-max <n>           Port pasif maksimum\n" +
+            "\n" +
+            "Mode client:\n" +
+            "  --remote-dir <folder>    Folder di server FTP (default /)\n" +
+            "  --recursive              Ikut cek subfolder\n" +
+            "  --interval <detik>       Jeda cek file baru (default 5)\n" +
+            "  --workers <n>            Jumlah koneksi download paralel (default 3)\n" +
+            "  --delete-after           Hapus file di server setelah berhasil diambil\n" +
+            "  --extensions <daftar>    Ekstensi yang diambil (default jpg,jpeg,png,bmp)\n" +
             "\n" +
             "Perintah via stdin: STOP | SET LINEID <id> | PING\n";
 
@@ -74,8 +95,29 @@ namespace FtpBackend
                 return 0;
             }
 
-            IPAddress bindAddress;
-            if (!IPAddress.TryParse(settings.Ip, out bindAddress))
+            bool clientMode;
+            if (settings.Mode.Equals("server", StringComparison.OrdinalIgnoreCase))
+            {
+                clientMode = false;
+            }
+            else if (settings.Mode.Equals("client", StringComparison.OrdinalIgnoreCase))
+            {
+                clientMode = true;
+            }
+            else
+            {
+                return Fail("Mode harus server atau client: " + settings.Mode);
+            }
+
+            IPAddress bindAddress = null;
+            if (clientMode)
+            {
+                if (string.IsNullOrEmpty(settings.Ip) || settings.Ip.Trim().Length == 0)
+                {
+                    return Fail("Alamat server FTP belum diisi");
+                }
+            }
+            else if (!IPAddress.TryParse(settings.Ip, out bindAddress))
             {
                 return Fail("Alamat IP tidak valid: " + settings.Ip);
             }
@@ -104,6 +146,13 @@ namespace FtpBackend
                 return Fail("Folder tujuan tidak bisa dipakai: " + ex.Message);
             }
 
+            return clientMode
+                ? RunClient(settings, processor, lineId, knownCodes)
+                : RunServer(settings, bindAddress, processor, lineId, knownCodes);
+        }
+
+        private static int RunServer(Settings settings, IPAddress bindAddress, PhotoProcessor processor, string lineId, int knownCodes)
+        {
             var options = new ServerOptions();
             options.BindAddress = bindAddress;
             options.Port = settings.Port;
@@ -125,14 +174,11 @@ namespace FtpBackend
                 return Fail(DescribeBindError(ex, settings));
             }
 
-            EventSink.Emit("state", "state", "listening", "ip", settings.Ip, "port", settings.Port,
+            EventSink.Emit("state", "state", "listening", "mode", "server", "ip", settings.Ip, "port", settings.Port,
                 "target", processor.TargetDir, "line_id", lineId, "known_codes", knownCodes, "version", Version);
             EventSink.Log("info", string.Format(CultureInfo.InvariantCulture,
-                "Server FTP aktif di {0}:{1}, folder tujuan {2}", settings.Ip, settings.Port, processor.TargetDir));
-            if (settings.Dedup)
-            {
-                EventSink.Log("info", knownCodes + " code sudah ada di folder tujuan (dipakai untuk cek duplikat)");
-            }
+                "Mode SERVER aktif di {0}:{1}, folder tujuan {2}", settings.Ip, settings.Port, processor.TargetDir));
+            LogKnownCodes(settings, knownCodes);
 
             RunCommandLoop(processor);
 
@@ -140,6 +186,55 @@ namespace FtpBackend
             server.Stop();
             EventSink.Emit("state", "state", "stopped");
             return 0;
+        }
+
+        private static int RunClient(Settings settings, PhotoProcessor processor, string lineId, int knownCodes)
+        {
+            var options = new ClientOptions();
+            options.Host = settings.Ip.Trim();
+            options.Port = settings.Port;
+            options.User = string.IsNullOrEmpty(settings.User) ? "anonymous" : settings.User;
+            options.Password = settings.Password ?? string.Empty;
+            options.RemoteDir = FtpPuller.NormalizeDir(settings.RemoteDir);
+            options.Recursive = settings.Recursive;
+            options.MaxDepth = Math.Max(0, settings.MaxDepth);
+            options.IntervalSeconds = Math.Max(1, settings.Interval);
+            options.Workers = Math.Min(16, Math.Max(1, settings.Workers));
+            options.DeleteAfterDownload = settings.DeleteAfter;
+            options.TimeoutSeconds = Math.Max(5, settings.DataTimeout);
+            options.Extensions = (settings.Extensions ?? string.Empty).Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+            var puller = new FtpPuller(options, processor);
+            string error = puller.Start();
+            if (error != null)
+            {
+                return Fail(error);
+            }
+
+            EventSink.Emit("state", "state", "running", "mode", "client", "ip", options.Host, "port", options.Port,
+                "target", processor.TargetDir, "line_id", lineId, "known_codes", knownCodes, "version", Version);
+            EventSink.Log("info", string.Format(CultureInfo.InvariantCulture,
+                "Mode CLIENT: cek {0}:{1}{2} setiap {3} detik ({4} koneksi download{5}{6}), folder tujuan {7}",
+                options.Host, options.Port, options.RemoteDir, options.IntervalSeconds, options.Workers,
+                options.Recursive ? ", termasuk subfolder" : string.Empty,
+                options.DeleteAfterDownload ? ", hapus setelah diambil" : string.Empty,
+                processor.TargetDir));
+            LogKnownCodes(settings, knownCodes);
+
+            RunCommandLoop(processor);
+
+            EventSink.Log("info", "Menghentikan client...");
+            puller.Stop();
+            EventSink.Emit("state", "state", "stopped");
+            return 0;
+        }
+
+        private static void LogKnownCodes(Settings settings, int knownCodes)
+        {
+            if (settings.Dedup)
+            {
+                EventSink.Log("info", knownCodes + " code sudah ada di folder tujuan (dipakai untuk cek duplikat)");
+            }
         }
 
         /// <summary>Reads control commands from the GUI. Returns on STOP or when stdin closes.</summary>
@@ -209,6 +304,14 @@ namespace FtpBackend
                         case "--pasv-max": settings.PassiveMax = NextInt(args, ref i); break;
                         case "--idle-timeout": settings.IdleTimeout = NextInt(args, ref i); break;
                         case "--data-timeout": settings.DataTimeout = NextInt(args, ref i); break;
+                        case "--mode": settings.Mode = Next(args, ref i); break;
+                        case "--remote-dir": settings.RemoteDir = Next(args, ref i); break;
+                        case "--recursive": settings.Recursive = true; break;
+                        case "--max-depth": settings.MaxDepth = NextInt(args, ref i); break;
+                        case "--interval": settings.Interval = NextInt(args, ref i); break;
+                        case "--workers": settings.Workers = NextInt(args, ref i); break;
+                        case "--delete-after": settings.DeleteAfter = true; break;
+                        case "--extensions": settings.Extensions = Next(args, ref i); break;
                         case "-h":
                         case "--help":
                         case "/?":

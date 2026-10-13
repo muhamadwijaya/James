@@ -11,6 +11,7 @@ from PySide6.QtGui import QCloseEvent, QColor, QDesktopServices, QFontDatabase, 
 from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -24,7 +25,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QRadioButton,
     QSpinBox,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -78,6 +81,7 @@ class MainWindow(QMainWindow):
         self._running_line_id = ""
         self._counts = {k: 0 for k in ("received", "saved", "duplicate", "unmatched", "error")}
         self._counts_connections = 0
+        self._link_up: bool | None = None
 
         self.backend = BackendClient(self)
         self.backend.event_received.connect(self._on_event)
@@ -102,7 +106,7 @@ class MainWindow(QMainWindow):
 
         top = QHBoxLayout()
         top.setSpacing(10)
-        top.addWidget(self._build_server_group(), 1)
+        top.addWidget(self._build_connection_group(), 1)
         top.addWidget(self._build_naming_group(), 1)
         root.addLayout(top)
         root.addLayout(self._build_control_row())
@@ -111,9 +115,36 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
-    def _build_server_group(self) -> QGroupBox:
+    def _build_connection_group(self) -> QGroupBox:
         box = QGroupBox("Koneksi FTP")
-        grid = QGridLayout(box)
+        layout = QVBoxLayout(box)
+
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Mode koneksi:"))
+        self.mode_server = QRadioButton("Server  (kamera kirim ke aplikasi ini)")
+        self.mode_client = QRadioButton("Client  (ambil dari server FTP)")
+        self.mode_group = QButtonGroup(self)
+        self.mode_group.addButton(self.mode_server, 0)
+        self.mode_group.addButton(self.mode_client, 1)
+        self.mode_server.setChecked(True)
+        mode_row.addWidget(self.mode_server)
+        mode_row.addWidget(self.mode_client)
+        mode_row.addStretch(1)
+        layout.addLayout(mode_row)
+
+        self.mode_stack = QStackedWidget()
+        self.mode_stack.addWidget(self._build_server_page())
+        self.mode_stack.addWidget(self._build_client_page())
+        layout.addWidget(self.mode_stack, 1)
+
+        self.mode_group.idToggled.connect(self._on_mode_toggled)
+        self._mode_widgets = [self.mode_server, self.mode_client]
+        return box
+
+    def _build_server_page(self) -> QWidget:
+        page = QWidget()
+        grid = QGridLayout(page)
+        grid.setContentsMargins(0, 0, 0, 0)
         grid.setColumnStretch(1, 1)
 
         self.ip_combo = QComboBox()
@@ -143,7 +174,7 @@ class MainWindow(QMainWindow):
             spin.setRange(0, 65535)
             spin.setToolTip("Rentang port data (mode pasif). 0 = otomatis.")
 
-        grid.addWidget(QLabel("IP Address"), 0, 0)
+        grid.addWidget(QLabel("IP lokal"), 0, 0)
         grid.addWidget(self.ip_combo, 0, 1)
         grid.addWidget(QLabel("Port"), 0, 2)
         grid.addWidget(self.port_spin, 0, 3)
@@ -167,7 +198,8 @@ class MainWindow(QMainWindow):
         grid.addWidget(QLabel("Port pasif"), 4, 0)
         grid.addLayout(pasv_row, 4, 1, 1, 3)
 
-        hint = QLabel("Isi IP komputer ini, port, username dan password yang sama di setting FTP kamera.")
+        hint = QLabel("Kamera mengirim foto ke aplikasi ini. Isi IP komputer ini, port, username "
+                      "dan password yang sama di setting FTP kamera.")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: palette(mid);")
         grid.addWidget(hint, 5, 0, 1, 4)
@@ -177,7 +209,79 @@ class MainWindow(QMainWindow):
             self.ip_combo, self.port_spin, self.user_edit, self.pass_edit, self.any_login,
             self.pasv_min, self.pasv_max,
         ]
-        return box
+        return page
+
+    def _build_client_page(self) -> QWidget:
+        page = QWidget()
+        grid = QGridLayout(page)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setColumnStretch(1, 1)
+
+        self.c_host_edit = QLineEdit()
+        self.c_host_edit.setPlaceholderText("contoh: 192.168.1.100")
+        self.c_port_spin = QSpinBox()
+        self.c_port_spin.setRange(1, 65535)
+        self.c_user_edit = QLineEdit()
+        self.c_pass_edit = QLineEdit()
+        self.c_pass_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        c_show_pass = QCheckBox("Tampilkan")
+        c_show_pass.toggled.connect(
+            lambda on: self.c_pass_edit.setEchoMode(QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password)
+        )
+        self.c_dir_edit = QLineEdit()
+        self.c_dir_edit.setPlaceholderText("/")
+        self.c_dir_edit.setToolTip("Folder di server FTP tempat foto berada, contoh: / atau /kamera1")
+        self.c_recursive = QCheckBox("Termasuk subfolder")
+        self.c_interval = QSpinBox()
+        self.c_interval.setRange(1, 3600)
+        self.c_interval.setSuffix(" detik")
+        self.c_interval.setToolTip("Seberapa sering folder di server dicek untuk foto baru")
+        self.c_workers = QSpinBox()
+        self.c_workers.setRange(1, 16)
+        self.c_workers.setToolTip("Jumlah koneksi download paralel (multi proses)")
+        self.c_delete = QCheckBox("Hapus file di server setelah berhasil diambil")
+
+        grid.addWidget(QLabel("IP server"), 0, 0)
+        grid.addWidget(self.c_host_edit, 0, 1)
+        grid.addWidget(QLabel("Port"), 0, 2)
+        grid.addWidget(self.c_port_spin, 0, 3)
+
+        grid.addWidget(QLabel("Username"), 1, 0)
+        grid.addWidget(self.c_user_edit, 1, 1, 1, 3)
+
+        pass_row = QHBoxLayout()
+        pass_row.addWidget(self.c_pass_edit, 1)
+        pass_row.addWidget(c_show_pass)
+        grid.addWidget(QLabel("Password"), 2, 0)
+        grid.addLayout(pass_row, 2, 1, 1, 3)
+
+        grid.addWidget(QLabel("Folder remote"), 3, 0)
+        grid.addWidget(self.c_dir_edit, 3, 1)
+        grid.addWidget(self.c_recursive, 3, 2, 1, 2)
+
+        timing_row = QHBoxLayout()
+        timing_row.addWidget(self.c_interval)
+        timing_row.addSpacing(12)
+        timing_row.addWidget(QLabel("Download paralel"))
+        timing_row.addWidget(self.c_workers)
+        timing_row.addStretch(1)
+        grid.addWidget(QLabel("Cek setiap"), 4, 0)
+        grid.addLayout(timing_row, 4, 1, 1, 3)
+
+        grid.addWidget(self.c_delete, 5, 1, 1, 3)
+
+        hint = QLabel("Aplikasi login ke server FTP, mengambil foto baru secara berkala, lalu rename "
+                      "ke folder tujuan. File yang sudah diambil tidak diunduh ulang.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: palette(mid);")
+        grid.addWidget(hint, 6, 0, 1, 4)
+        grid.setRowStretch(7, 1)
+
+        self._client_widgets = [
+            self.c_host_edit, self.c_port_spin, self.c_user_edit, self.c_pass_edit, c_show_pass,
+            self.c_dir_edit, self.c_recursive, self.c_interval, self.c_workers, self.c_delete,
+        ]
+        return page
 
     def _build_naming_group(self) -> QGroupBox:
         box = QGroupBox("Penamaan && Penyimpanan")
@@ -327,6 +431,16 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------- config
     def _apply_config(self, cfg: dict) -> None:
+        (self.mode_client if cfg["mode"] == "client" else self.mode_server).setChecked(True)
+        self.c_host_edit.setText(cfg["client_host"])
+        self.c_port_spin.setValue(cfg["client_port"])
+        self.c_user_edit.setText(cfg["client_user"])
+        self.c_pass_edit.setText(cfg["client_password"])
+        self.c_dir_edit.setText(cfg["client_remote_dir"])
+        self.c_recursive.setChecked(cfg["client_recursive"])
+        self.c_interval.setValue(cfg["client_interval"])
+        self.c_workers.setValue(cfg["client_workers"])
+        self.c_delete.setChecked(cfg["client_delete_after"])
         self.ip_combo.setCurrentText(cfg["ip"])
         self.port_spin.setValue(cfg["port"])
         self.user_edit.setText(cfg["username"])
@@ -341,8 +455,21 @@ class MainWindow(QMainWindow):
         self.keep_dup_check.setChecked(cfg["keep_duplicates"])
         self.autostart_check.setChecked(cfg["autostart"])
 
+    def _mode(self) -> str:
+        return "client" if self.mode_client.isChecked() else "server"
+
     def _collect_config(self) -> dict:
         return {
+            "mode": self._mode(),
+            "client_host": self.c_host_edit.text().strip(),
+            "client_port": self.c_port_spin.value(),
+            "client_user": self.c_user_edit.text().strip(),
+            "client_password": self.c_pass_edit.text(),
+            "client_remote_dir": self.c_dir_edit.text().strip() or "/",
+            "client_recursive": self.c_recursive.isChecked(),
+            "client_interval": self.c_interval.value(),
+            "client_workers": self.c_workers.value(),
+            "client_delete_after": self.c_delete.isChecked(),
             "ip": self.ip_combo.currentText().strip(),
             "port": self.port_spin.value(),
             "username": self.user_edit.text().strip(),
@@ -360,14 +487,21 @@ class MainWindow(QMainWindow):
 
     def _validate(self, cfg: dict) -> list[str]:
         problems = []
-        try:
-            ipaddress.IPv4Address(cfg["ip"])
-        except ValueError:
-            problems.append(f"IP Address tidak valid: {cfg['ip'] or '(kosong)'}")
         if not naming.clean_line_id(cfg["line_id"]):
             problems.append("LINE-ID belum diisi.")
         if not cfg["target_dir"]:
             problems.append("Folder tujuan belum dipilih.")
+        if cfg["mode"] == "client":
+            host = cfg["client_host"]
+            if not host or any(c.isspace() for c in host):
+                problems.append(f"IP server FTP tidak valid: {host or '(kosong)'}")
+            if not cfg["client_user"]:
+                problems.append("Username server FTP belum diisi (pakai 'anonymous' jika tanpa login).")
+            return problems
+        try:
+            ipaddress.IPv4Address(cfg["ip"])
+        except ValueError:
+            problems.append(f"IP Address tidak valid: {cfg['ip'] or '(kosong)'}")
         if not cfg["any_login"] and not cfg["username"]:
             problems.append("Username belum diisi (atau centang 'Terima username/password apa saja').")
         if cfg["pasv_min"] and cfg["pasv_max"] < cfg["pasv_min"]:
@@ -400,17 +534,37 @@ class MainWindow(QMainWindow):
         app_config.save(cfg)
 
         args = [
-            "--ip", cfg["ip"],
-            "--port", str(cfg["port"]),
-            "--user", cfg["username"],
             "--target", cfg["target_dir"],
             "--line-id", cfg["line_id"],
-            "--pasv-min", str(cfg["pasv_min"]),
-            "--pasv-max", str(cfg["pasv_max"]),
             "--dedup-minutes", str(cfg["dedup_minutes"]),
         ]
-        if cfg["any_login"]:
-            args.append("--any-login")
+        if cfg["mode"] == "client":
+            password = cfg["client_password"]
+            args += [
+                "--mode", "client",
+                "--ip", cfg["client_host"],
+                "--port", str(cfg["client_port"]),
+                "--user", cfg["client_user"],
+                "--remote-dir", cfg["client_remote_dir"],
+                "--interval", str(cfg["client_interval"]),
+                "--workers", str(cfg["client_workers"]),
+            ]
+            if cfg["client_recursive"]:
+                args.append("--recursive")
+            if cfg["client_delete_after"]:
+                args.append("--delete-after")
+        else:
+            password = cfg["password"]
+            args += [
+                "--mode", "server",
+                "--ip", cfg["ip"],
+                "--port", str(cfg["port"]),
+                "--user", cfg["username"],
+                "--pasv-min", str(cfg["pasv_min"]),
+                "--pasv-max", str(cfg["pasv_max"]),
+            ]
+            if cfg["any_login"]:
+                args.append("--any-login")
         if not cfg["dedup"]:
             args.append("--no-dedup")
         if cfg["keep_duplicates"]:
@@ -419,9 +573,10 @@ class MainWindow(QMainWindow):
         self._stop_requested = False
         self._last_error = None
         self._running_line_id = naming.clean_line_id(cfg["line_id"])
+        self._link_up = None
         self._set_state("starting")
-        self._append_log("info", f"Menjalankan backend: {program}")
-        self.backend.start(program, args, cfg["password"])
+        self._append_log("info", f"Menjalankan backend ({cfg['mode']}): {program}")
+        self.backend.start(program, args, password)
 
     def stop_server(self) -> None:
         if not self.backend.is_running():
@@ -447,7 +602,7 @@ class MainWindow(QMainWindow):
     def _open_target(self) -> None:
         folder = Path(self.target_edit.text().strip())
         if not folder.is_dir():
-            QMessageBox.information(self, "Folder tujuan", "Folder belum ada. Folder akan dibuat saat server dimulai.")
+            QMessageBox.information(self, "Folder tujuan", "Folder belum ada. Folder akan dibuat saat dimulai.")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
@@ -469,7 +624,7 @@ class MainWindow(QMainWindow):
         kind = event.get("type")
         if kind == "state":
             state = event.get("state")
-            if state == "listening":
+            if state in ("listening", "running"):
                 self._set_state("running")
             elif state == "error":
                 self._last_error = event.get("message") or "Kesalahan tidak diketahui"
@@ -481,10 +636,14 @@ class MainWindow(QMainWindow):
         elif kind == "connections":
             self._counts_connections = int(event.get("count", 0))
             self._refresh_counts()
+        elif kind == "link":
+            self._link_up = bool(event.get("connected"))
+            if self._state == "running":
+                self._set_state("running")
 
     def _on_file_event(self, event: dict) -> None:
         status = event.get("status", "error")
-        if event.get("source") == "upload":
+        if event.get("source") in ("upload", "download"):
             self._counts["received"] += 1
         if event.get("previous") == "unmatched" and self._counts["unmatched"] > 0:
             self._counts["unmatched"] -= 1
@@ -534,15 +693,28 @@ class MainWindow(QMainWindow):
         self._refresh_counts()
         if self._last_error:
             message, self._last_error = self._last_error, None
-            QMessageBox.critical(self, "Server tidak bisa berjalan", message)
+            QMessageBox.critical(self, f"{self._mode().capitalize()} tidak bisa berjalan", message)
         elif not self._stop_requested and exit_code != 0:
             self._append_log("error", f"Backend berhenti tiba-tiba (kode {exit_code}).")
-        self._append_log("info", "Server berhenti.")
+        self._append_log("info", f"{self._mode().capitalize()} berhenti.")
 
     # ------------------------------------------------------------ helpers
+    def _on_mode_toggled(self, button_id: int, checked: bool) -> None:
+        if checked:
+            self.mode_stack.setCurrentIndex(button_id)
+            self._set_state(self._state)
+
+    def _state_display(self) -> tuple[str, str]:
+        if self._state == "running" and self._mode() == "client":
+            return ("Terhubung", "#1e8e3e") if self._link_up else ("Menghubungkan...", "#d97706")
+        return STATE_STYLE[self._state]
+
     def _set_state(self, state: str) -> None:
         self._state = state
-        text, color = STATE_STYLE[state]
+        mode_name = self._mode().capitalize()
+        self.start_btn.setText(f"Mulai {mode_name}")
+        self.stop_btn.setText(f"Stop {mode_name}")
+        text, color = self._state_display()
         self.state_label.setText(f"\u25cf  {text}")
         self.state_label.setStyleSheet(
             f"color:{color}; border:1px solid {color}; font-weight:600; padding:6px 12px; border-radius:14px;"
@@ -554,7 +726,7 @@ class MainWindow(QMainWindow):
 
     def _update_enabled(self) -> None:
         idle = self._state == "stopped"
-        for widget in self._server_widgets + self._naming_widgets:
+        for widget in self._mode_widgets + self._server_widgets + self._client_widgets + self._naming_widgets:
             widget.setEnabled(idle)
         if idle:
             self.user_edit.setEnabled(not self.any_login.isChecked())
@@ -587,7 +759,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 (Qt API)
         if self.backend.is_running():
             answer = QMessageBox.question(
-                self, "Keluar", "Server FTP masih berjalan. Hentikan server dan keluar?",
+                self, "Keluar", f"{self._mode().capitalize()} FTP masih berjalan. Hentikan dan keluar?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:

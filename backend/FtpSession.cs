@@ -66,7 +66,6 @@ namespace FtpBackend
     /// </summary>
     internal sealed class FtpSession
     {
-        private const int BufferSize = 81920;
         private const int MaxRememberedUploads = 500;
         private static readonly Encoding Utf8 = new UTF8Encoding(false);
 
@@ -142,7 +141,7 @@ namespace FtpBackend
                 while (!_closed)
                 {
                     Task<string> read = _reader.ReadLineAsync();
-                    if (!await WithTimeout(read, _options.IdleTimeoutSeconds))
+                    if (!await AsyncUtil.WithTimeout(read, _options.IdleTimeoutSeconds))
                     {
                         await ReplyAsync(421, "Idle timeout, closing connection.");
                         break;
@@ -592,9 +591,9 @@ namespace FtpBackend
             try
             {
                 using (data)
-                using (var file = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferSize, true))
+                using (var file = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, AsyncUtil.BufferSize, true))
                 {
-                    bytes = await CopyAsync(data.Stream, file);
+                    bytes = await AsyncUtil.CopyAsync(data.Stream, file, _options.DataTimeoutSeconds);
                 }
             }
             catch (Exception ex)
@@ -794,7 +793,7 @@ namespace FtpBackend
                 try
                 {
                     Task<TcpClient> accept = listener.AcceptTcpClientAsync();
-                    if (!await WithTimeout(accept, _options.DataTimeoutSeconds))
+                    if (!await AsyncUtil.WithTimeout(accept, _options.DataTimeoutSeconds))
                     {
                         return null;
                     }
@@ -824,7 +823,7 @@ namespace FtpBackend
                 try
                 {
                     Task connect = client.ConnectAsync(active.Address, active.Port);
-                    if (!await WithTimeout(connect, _options.DataTimeoutSeconds))
+                    if (!await AsyncUtil.WithTimeout(connect, _options.DataTimeoutSeconds))
                     {
                         client.Close();
                         return null;
@@ -840,29 +839,6 @@ namespace FtpBackend
             }
 
             return null;
-        }
-
-        private async Task<long> CopyAsync(Stream source, Stream destination)
-        {
-            byte[] buffer = new byte[BufferSize];
-            long total = 0;
-            while (true)
-            {
-                Task<int> read = source.ReadAsync(buffer, 0, buffer.Length);
-                if (!await WithTimeout(read, _options.DataTimeoutSeconds))
-                {
-                    throw new TimeoutException("Tidak ada data selama " + _options.DataTimeoutSeconds + " detik");
-                }
-                int count = await read;
-                if (count <= 0)
-                {
-                    break;
-                }
-                await destination.WriteAsync(buffer, 0, count);
-                total += count;
-            }
-            await destination.FlushAsync();
-            return total;
         }
 
         private Task ReplyAsync(int code, string message)
@@ -926,17 +902,6 @@ namespace FtpBackend
         private static IPAddress Normalize(IPAddress address)
         {
             return address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
-        }
-
-        private static async Task<bool> WithTimeout(Task task, int seconds)
-        {
-            using (var cts = new CancellationTokenSource())
-            {
-                Task delay = Task.Delay(TimeSpan.FromSeconds(seconds), cts.Token);
-                Task first = await Task.WhenAny(task, delay);
-                cts.Cancel();
-                return first == task;
-            }
         }
     }
 }

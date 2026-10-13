@@ -21,6 +21,8 @@ def _user_dir() -> Path:
 
 
 DEFAULTS: dict = {
+    "mode": "server",
+    # server mode: cameras upload to this app
     "ip": "0.0.0.0",
     "port": 21,
     "username": "admin",
@@ -28,6 +30,17 @@ DEFAULTS: dict = {
     "any_login": False,
     "pasv_min": 50000,
     "pasv_max": 50200,
+    # client mode: this app downloads from another FTP server
+    "client_host": "",
+    "client_port": 21,
+    "client_user": "admin",
+    "client_password": "",
+    "client_remote_dir": "/",
+    "client_recursive": True,
+    "client_interval": 5,
+    "client_workers": 3,
+    "client_delete_after": False,
+    # naming & storage
     "line_id": "00001",
     "target_dir": str(Path.home() / "Pictures" / "FTP_Foto"),
     "dedup": True,

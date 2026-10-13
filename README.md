@@ -1,11 +1,20 @@
 # FTP Photo Renamer
 
-Aplikasi Windows untuk **menerima foto dari kamera via FTP**, lalu otomatis **me-rename** dan
+Aplikasi Windows untuk **menerima foto via FTP**, lalu otomatis **me-rename** dan
 menyimpannya ke folder tujuan.
 
 - GUI: **Python + PySide6**
-- Backend FTP server: **C#** (async, setiap koneksi kamera diproses paralel)
+- Backend: **C#** (async, banyak koneksi diproses paralel)
 - Build langsung jadi **1 file `.exe`** dengan `build.bat`
+
+## Mode koneksi
+
+| Mode | Cara kerja | Dipakai jika |
+|---|---|---|
+| **Server** | Aplikasi menjadi FTP server. Kamera **mengirim (upload)** foto ke aplikasi. | Kamera bisa di-setting upload FTP ke PC ini |
+| **Client** | Aplikasi login ke FTP server lain (NVR / server pusat) dan **mengambil (download)** foto baru secara berkala. | Foto sudah dikumpulkan di FTP server lain |
+
+Aturan rename dan anti duplikat sama untuk kedua mode.
 
 ## Format nama file
 
@@ -15,14 +24,27 @@ menyimpannya ke folder tujuan.
 | Disimpan ke folder | `LINE-ID_YYYYMMDD_HHMMSS_CODE.jpg` | `00001_20261010_000846_3975264812.jpg` |
 
 - Spasi di CODE dihapus (`3975 264 812` → `3975264812`).
-- LINE-ID diisi di aplikasi dan bisa diganti saat server berjalan.
+- LINE-ID diisi di aplikasi dan bisa diganti saat sedang berjalan.
 - Kolom **Uji nama file** di aplikasi menampilkan hasil rename sebelum server dijalankan.
 
 ## Fitur
 
+**Mode Server**
 - IP dan port FTP bisa diatur (0.0.0.0 = semua kartu jaringan), plus username/password
   (atau terima login apa saja).
 - Mode pasif (PASV/EPSV) dan aktif (PORT/EPRT), rentang port pasif bisa diatur.
+
+**Mode Client**
+- IP/host, port, username, password server FTP, dan folder remote (bisa termasuk subfolder).
+- Cek foto baru setiap N detik, download dengan beberapa koneksi paralel (default 3).
+- File yang masih ditulis di server diambil setelah ukurannya stabil.
+- File yang sudah diambil diingat (`.incoming\remote_<host>_<port>.txt`), jadi tidak diunduh ulang.
+- Opsional: hapus file di server setelah berhasil diambil.
+- Jika server mati/putus, aplikasi mencoba terhubung lagi otomatis.
+- Diambil: `.jpg .jpeg .png .bmp`. Jika beberapa foto dengan code sama ada di server, yang paling lama disimpan.
+- Mendukung listing MLSD serta LIST format Unix dan Windows/IIS.
+
+**Umum**
 - **Anti duplikat**: jika CODE yang sama dikirim lagi, hanya 1 file yang disimpan.
   - Rentang cek duplikat: *Selamanya* (default) atau N menit.
   - Code yang sudah ada di folder tujuan ikut dihitung (tetap berlaku setelah aplikasi ditutup/dibuka lagi).
@@ -59,10 +81,14 @@ File `.exe` ini sudah berisi GUI dan backend, jadi cukup salin satu file ini ke 
 ## Cara pakai
 
 1. Jalankan `FtpPhotoRenamer.exe`.
-2. Isi **IP Address**, **Port** (default 21), **Username**, **Password**.
+2. Pilih **Mode koneksi**:
+   - **Server**: isi IP lokal, Port (default 21), Username, Password. Di setting FTP kamera,
+     isi IP komputer ini, port, username dan password yang sama.
+   - **Client**: isi IP server FTP, Port, Username, Password, Folder remote, interval cek,
+     jumlah download paralel, dan centang *Hapus file di server* jika perlu.
 3. Isi **LINE-ID** (mis. `00001`) dan pilih **Folder tujuan** dengan tombol *Browse...*.
-4. Klik **Mulai Server**. Saat pertama kali jalan, izinkan akses di jendela *Windows Firewall*.
-5. Di setting FTP kamera, isi IP komputer ini, port, username dan password yang sama.
+4. Klik **Mulai Server** / **Mulai Client**. Saat pertama kali jalan, izinkan akses di jendela
+   *Windows Firewall*.
 
 ### Uji tanpa kamera
 
@@ -75,11 +101,14 @@ Script ini mengirim 4 file: 2 tersimpan, 1 duplikat, 1 format tidak sesuai.
 ## Struktur proyek
 
 ```
-backend/        FTP server C# (FtpBackend.exe)
-  Program.cs          argumen & perintah dari GUI (stdin)
-  FtpServer.cs        listener + sesi paralel
-  FtpSession.cs       protokol FTP per koneksi
+backend/        backend C# (FtpBackend.exe)
+  Program.cs          argumen, mode server/client, perintah dari GUI (stdin)
+  FtpServer.cs        mode server: listener + sesi paralel
+  FtpSession.cs       mode server: protokol FTP per koneksi
+  FtpClient.cs        mode client: protokol FTP client (PASV/EPSV, MLSD/LIST, RETR, DELE)
+  FtpPuller.cs        mode client: scan berkala + download paralel
   PhotoProcessor.cs   rename + anti duplikat
+  AsyncUtil.cs        helper timeout
   EventSink.cs        event JSON ke GUI (stdout)
 gui/            GUI PySide6
   main.py             entry point
