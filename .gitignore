@@ -1,0 +1,9 @@
+.venv/
+build/
+dist/
+backend/bin/
+backend/obj/
+__pycache__/
+*.pyc
+*.spec
+config.json

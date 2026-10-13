@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Backend FTP untuk FTP Photo Renamer.
+    Kode sengaja ditulis dengan C# 5 agar juga bisa dikompilasi oleh csc.exe
+    bawaan Windows (.NET Framework 4.x) jika .NET SDK tidak terpasang.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>5</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>FtpBackend</AssemblyName>
+    <RootNamespace>FtpBackend</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredPGO>true</TieredPGO>
+    <Version>1.0.0</Version>
+    <Product>FTP Photo Renamer Backend</Product>
+  </PropertyGroup>
+
+</Project>
