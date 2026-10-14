@@ -618,9 +618,8 @@ namespace FtpBackend
             if (transferError != null)
             {
                 PhotoProcessor.TryDelete(tempPath);
-                EventSink.Emit("file", "status", "error", "source", "upload", "client", _remoteIp.ToString(),
-                    "original", fileName, "name", null, "path", null, "code", null, "bytes", bytes,
-                    "message", "Transfer gagal: " + transferError);
+                EventSink.FileEvent("error", "upload", _remoteIp.ToString(), fileName, null, null, null, bytes,
+                    "Transfer gagal: " + transferError, null);
                 await ReplyAsync(426, "Transfer aborted.");
                 return true;
             }
@@ -792,9 +791,8 @@ namespace FtpBackend
                 case PhotoStatus.Unmatched: status = "unmatched"; break;
                 default: status = "error"; break;
             }
-            EventSink.Emit("file", "status", status, "source", source, "client", _remoteIp.ToString(),
-                "original", result.OriginalName, "name", result.NewName, "path", result.Held ? null : result.FinalPath,
-                "code", result.Code, "bytes", bytes, "message", result.Message, "previous", previous);
+            EventSink.FileEvent(status, source, _remoteIp.ToString(), result.OriginalName, result.NewName,
+                result.Held ? null : result.FinalPath, result.Code, bytes, result.Message, previous);
         }
 
         private void RememberUpload(string virtualPath, UploadRecord record)

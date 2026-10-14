@@ -394,9 +394,8 @@ namespace FtpBackend
                 if (error != null)
                 {
                     int wait = RegisterFailure(entry.FullPath);
-                    EventSink.Emit("file", "status", "error", "source", "download", "client", _options.Host,
-                        "original", entry.Name, "name", null, "path", null, "code", null, "bytes", 0,
-                        "message", "Gagal mengambil " + entry.FullPath + ": " + error + " (dicoba lagi dalam " + wait + " detik)");
+                    EventSink.FileEvent("error", "download", _options.Host, entry.Name, null, null, null, 0,
+                        "Gagal mengambil " + entry.FullPath + ": " + error + " (dicoba lagi dalam " + wait + " detik)", null);
                 }
                 string ignored;
                 _inFlight.TryRemove(entry.FullPath, out ignored);
@@ -435,9 +434,8 @@ namespace FtpBackend
                 // Local problem (e.g. disk): keep the file on the server and retry next scan.
                 PhotoProcessor.TryDelete(tempPath);
                 int wait = RegisterFailure(entry.FullPath);
-                EventSink.Emit("file", "status", "error", "source", "download", "client", _options.Host,
-                    "original", entry.Name, "name", null, "path", null, "code", null, "bytes", bytes,
-                    "message", result.Message + " (dicoba lagi dalam " + wait + " detik)");
+                EventSink.FileEvent("error", "download", _options.Host, entry.Name, null, null, null, bytes,
+                    result.Message + " (dicoba lagi dalam " + wait + " detik)", null);
                 return;
             }
 
@@ -502,9 +500,8 @@ namespace FtpBackend
                 case PhotoStatus.Duplicate: status = "duplicate"; break;
                 default: status = "unmatched"; break;
             }
-            EventSink.Emit("file", "status", status, "source", "download", "client", _options.Host,
-                "original", result.OriginalName, "name", result.NewName, "path", result.FinalPath,
-                "code", result.Code, "bytes", bytes, "message", result.Message, "previous", null);
+            EventSink.FileEvent(status, "download", _options.Host, result.OriginalName, result.NewName,
+                result.FinalPath, result.Code, bytes, result.Message, null);
         }
 
         private static string CodeOf(string name)

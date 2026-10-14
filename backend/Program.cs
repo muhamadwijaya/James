@@ -150,9 +150,18 @@ namespace FtpBackend
                 return Fail("Folder tujuan tidak bisa dipakai: " + ex.Message);
             }
 
-            return clientMode
-                ? RunClient(settings, processor, lineId, knownCodes)
-                : RunServer(settings, bindAddress, processor, lineId, knownCodes);
+            EventSink.OpenDailyLogs(processor.LogDir);
+            try
+            {
+                return clientMode
+                    ? RunClient(settings, processor, lineId, knownCodes)
+                    : RunServer(settings, bindAddress, processor, lineId, knownCodes);
+            }
+            finally
+            {
+                processor.CloseLogs();
+                EventSink.CloseDailyLogs();
+            }
         }
 
         private static int RunServer(Settings settings, IPAddress bindAddress, PhotoProcessor processor, string lineId, int knownCodes)
@@ -376,6 +385,7 @@ namespace FtpBackend
 
         private static int Fail(string message)
         {
+            EventSink.Log("error", message);
             EventSink.Emit("state", "state", "error", "message", message);
             return 2;
         }

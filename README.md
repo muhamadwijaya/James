@@ -56,7 +56,11 @@ Format simpan: `LINE-ID_YYYYMMDD_HHMMSS_CODE.jpg`.
   - Code yang sudah ada di folder tujuan ikut dihitung (tetap berlaku setelah aplikasi ditutup/dibuka lagi).
   - Opsional: simpan duplikat ke subfolder `_duplikat` (default: dibuang).
 - Tombol **Browse** untuk memilih folder tujuan, dan **Buka** untuk membuka folder.
-- Tabel file diterima (klik dua kali untuk membuka foto), statistik, dan log.
+- Panel **Foto terakhir disimpan**: menampilkan foto terbaru yang berhasil disimpan, beserta
+  nama file, code, waktu foto dan pengirim (klik dua kali untuk membuka foto).
+- Tabel file diterima dan log di layar hanya menampilkan **50 data terbaru**, supaya aplikasi tetap
+  ringan walau berjalan terus-menerus. Data lengkap disimpan ke file txt per hari (lihat di bawah).
+- Statistik jumlah diterima / disimpan / duplikat / tidak sesuai / gagal.
 - Pengaturan tersimpan otomatis di `config.json`, dengan opsi *Mulai otomatis saat aplikasi dibuka*.
 
 **File yang formatnya tidak sesuai** (tidak ada tanggal-jam atau CODE kosong) **tidak disimpan**
@@ -70,11 +74,32 @@ _log\tidak_sesuai_2026-10-14.txt
 Jika foto tersebut tetap ingin disimpan, centang *Simpan foto yang formatnya tidak sesuai*
 (foto masuk ke `_tidak_sesuai`). Tombol **Buka log txt** membuka folder `_log`.
 
+### Log txt per hari
+
+Semua data ditulis ke folder `_log` di dalam folder tujuan. Setiap hari otomatis dibuat file
+baru (berganti tepat jam 00:00, walau aplikasi tetap berjalan):
+
+| File | Isi |
+|---|---|
+| `diterima_YYYY-MM-DD.txt` | semua file yang diterima: waktu, pengirim, status, nama asli, nama baru, code, ukuran, keterangan |
+| `log_YYYY-MM-DD.txt` | semua baris log (koneksi, login, disimpan, duplikat, error) |
+| `tidak_sesuai_YYYY-MM-DD.txt` | hanya file yang formatnya tidak sesuai |
+
+Contoh `diterima_2026-10-14.txt`:
+
+```
+# waktu | dari | status | nama asli | nama baru | code | bytes | keterangan
+2026-10-14 12:17:41 | 192.168.1.50 | Disimpan | https&&&aslibos.com&scan&BXXAXESPP2026_10_14_12_16_53.jpg | 00001_20261014_121653_BXXAXESPP.jpg | BXXAXESPP | 48213 |
+2026-10-14 12:17:41 | 192.168.1.50 | Duplikat | https&&&aslibos.com&scan&BXXAXESPP2026_10_14_12_16_53.jpg | 00001_20261014_121653_BXXAXESPP.jpg | BXXAXESPP | 48213 | Code sudah pernah disimpan
+```
+
+File txt bisa dibuka dengan Notepad saat aplikasi sedang berjalan.
+
 Folder khusus di dalam folder tujuan:
 
 | Folder | Isi |
 |---|---|
-| `_log` | log txt harian berisi nama file yang formatnya tidak sesuai |
+| `_log` | log txt harian (lihat di atas) |
 | `_tidak_sesuai` | foto yang formatnya tidak sesuai, hanya jika opsinya dicentang |
 | `_duplikat` | duplikat, hanya jika opsinya dicentang |
 | `.incoming` | file yang sedang diterima (sementara) |
@@ -128,10 +153,12 @@ backend/        backend C# (FtpBackend.exe)
   FtpPuller.cs        mode client: scan berkala + download paralel
   PhotoProcessor.cs   rename + anti duplikat
   AsyncUtil.cs        helper timeout
-  EventSink.cs        event JSON ke GUI (stdout)
+  EventSink.cs        event JSON ke GUI (stdout) + log txt harian
+  DailyTextLog.cs     file txt yang berganti setiap hari
 gui/            GUI PySide6
   main.py             entry point
   main_window.py      jendela utama
+  photo_preview.py    panel foto terakhir disimpan
   backend_client.py   menjalankan backend (QProcess)
   naming.py           preview aturan rename
   app_config.py       simpan/muat config.json

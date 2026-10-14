@@ -66,6 +66,7 @@ namespace FtpBackend
         private static readonly char[] InvalidNameChars = { '\\', '/', ':', '*', '?', '"', '<', '>', '|' };
 
         private readonly object _sync = new object();
+        private readonly DailyTextLog _unmatchedLog;
         private readonly Dictionary<string, DateTime> _seenCodes = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private string _lineId;
 
@@ -77,6 +78,7 @@ namespace FtpBackend
             DuplicateDir = Path.Combine(TargetDir, "_duplikat");
             UnmatchedDir = Path.Combine(TargetDir, "_tidak_sesuai");
             LogDir = Path.Combine(TargetDir, "_log");
+            _unmatchedLog = new DailyTextLog(LogDir, "tidak_sesuai_", null);
             _lineId = lineId;
             DedupEnabled = dedupEnabled;
             DedupWindowMinutes = dedupWindowMinutes;
@@ -388,13 +390,15 @@ namespace FtpBackend
         private string WriteUnmatchedLog(string originalName, string client, long bytes)
         {
             DateTime now = DateTime.Now;
-            Directory.CreateDirectory(LogDir);
-            string logFile = Path.Combine(LogDir, "tidak_sesuai_" + now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".txt");
             string line = now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " | " +
                           (string.IsNullOrEmpty(client) ? "-" : client) + " | " +
-                          bytes.ToString(CultureInfo.InvariantCulture) + " bytes | " + originalName + "\r\n";
-            File.AppendAllText(logFile, line, new UTF8Encoding(false));
-            return logFile;
+                          bytes.ToString(CultureInfo.InvariantCulture) + " bytes | " + originalName;
+            return _unmatchedLog.Write(now, line);
+        }
+
+        public void CloseLogs()
+        {
+            _unmatchedLog.Close();
         }
 
         private bool IsWithinWindow(DateTime previous, DateTime current)

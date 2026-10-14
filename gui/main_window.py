@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSpinBox,
+    QSplitter,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -38,8 +39,12 @@ from PySide6.QtWidgets import (
 import app_config
 import naming
 from backend_client import BackendClient, find_backend
+from photo_preview import PhotoPreview
 
-MAX_TABLE_ROWS = 2000
+# Only the newest rows/lines are kept on screen so the UI stays light when running
+# continuously; the full data is in the daily txt files in <folder tujuan>\_log.
+MAX_TABLE_ROWS = 50
+MAX_LOG_LINES = 50
 
 STATUS_TEXT = {
     "saved": ("Disimpan", "#1e8e3e"),
@@ -72,7 +77,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("FTP Photo Renamer")
-        self.resize(1150, 780)
+        self.resize(1280, 860)
 
         self.cfg = app_config.load()
         self._state = "stopped"
@@ -111,7 +116,14 @@ class MainWindow(QMainWindow):
         root.addLayout(top)
         root.addLayout(self._build_control_row())
         root.addLayout(self._build_stats_row())
-        root.addWidget(self._build_tabs(), 1)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self._build_tabs())
+        self.preview = PhotoPreview()
+        splitter.addWidget(self.preview)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        splitter.setSizes([760, 480])
+        root.addWidget(splitter, 1)
 
         self.setCentralWidget(central)
 
@@ -433,13 +445,17 @@ class MainWindow(QMainWindow):
             header.setSectionResizeMode(col, mode)
         self.table.setToolTip("Klik dua kali untuk membuka foto")
         self.table.cellDoubleClicked.connect(self._open_row_file)
-        tabs.addTab(self.table, "File diterima")
+        tabs.addTab(self.table, f"File diterima ({MAX_TABLE_ROWS} terbaru)")
 
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
-        self.log_view.setMaximumBlockCount(5000)
+        self.log_view.setMaximumBlockCount(MAX_LOG_LINES)
         self.log_view.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
-        tabs.addTab(self.log_view, "Log")
+        tabs.addTab(self.log_view, f"Log ({MAX_LOG_LINES} terbaru)")
+        full_data = "Data lengkap per hari ada di folder tujuan\\_log:\n" \
+                    "diterima_YYYY-MM-DD.txt, log_YYYY-MM-DD.txt, tidak_sesuai_YYYY-MM-DD.txt"
+        tabs.setTabToolTip(0, full_data)
+        tabs.setTabToolTip(1, full_data)
         return tabs
 
     # ------------------------------------------------------------- config
@@ -651,8 +667,8 @@ class MainWindow(QMainWindow):
             if state in ("listening", "running"):
                 self._set_state("running")
             elif state == "error":
+                # the backend also sends the message as a log line
                 self._last_error = event.get("message") or "Kesalahan tidak diketahui"
-                self._append_log("error", self._last_error, event.get("time"))
         elif kind == "log":
             self._append_log(event.get("level", "info"), event.get("message", ""), event.get("time"))
         elif kind == "file":
@@ -688,6 +704,8 @@ class MainWindow(QMainWindow):
         self.table.insertRow(0)
         for col, value in enumerate(values):
             item = QTableWidgetItem(value)
+            if col in (2, 3) and value:
+                item.setToolTip(value)
             if col == 5:
                 item.setForeground(QColor(color))
                 if event.get("message"):
@@ -701,6 +719,8 @@ class MainWindow(QMainWindow):
             self.table.removeRow(self.table.rowCount() - 1)
 
         original = event.get("original") or "?"
+        if status == "saved" and event.get("path"):
+            self.preview.show_saved(event)
         if status == "saved":
             self._append_log("info", f"Disimpan: {original}  ->  {event.get('name')}", event.get("time"))
         elif status == "duplicate":
