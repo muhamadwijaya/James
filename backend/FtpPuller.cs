@@ -415,18 +415,23 @@ namespace FtpBackend
 
             string tempPath = _processor.CreateTempPath();
             long bytes;
+            ParsedPhotoName parsed;
+            string newName = PhotoProcessor.TryParse(entry.Name, out parsed) ? PhotoProcessor.BuildName(parsed, _processor.LineId) : null;
+            var transfer = new TransferReporter(entry.Name, newName, _options.Host, entry.Size);
             try
             {
                 using (var file = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, AsyncUtil.BufferSize, true))
                 {
-                    bytes = await client.DownloadAsync(entry.Directory, entry.Name, file);
+                    bytes = await client.DownloadAsync(entry.Directory, entry.Name, file, transfer);
                 }
             }
             catch
             {
+                transfer.Failed(0);
                 PhotoProcessor.TryDelete(tempPath);
                 throw;
             }
+            transfer.Done(bytes);
 
             PhotoResult result = _processor.Complete(tempPath, entry.Name, _options.Host, bytes);
             if (result.Status == PhotoStatus.Error)

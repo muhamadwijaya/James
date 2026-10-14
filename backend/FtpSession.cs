@@ -86,6 +86,7 @@ namespace FtpBackend
         private TcpListener _passive;
         private IPEndPoint _active;
         private string _renameFrom;
+        private long _allocSize = -1;
         // Last unmatched upload that was not kept: held briefly in case the client renames it.
         private string _heldPath;
         private volatile bool _busy;
@@ -316,8 +317,14 @@ namespace FtpBackend
                     return true;
 
                 case "ALLO":
-                    await ReplyAsync(202, "No storage allocation necessary.");
-                    return true;
+                    {
+                        // Some clients announce the file size: used for the progress bar.
+                        long size;
+                        string first = arg.Split(' ')[0];
+                        _allocSize = long.TryParse(first, NumberStyles.None, CultureInfo.InvariantCulture, out size) ? size : -1;
+                        await ReplyAsync(202, "No storage allocation necessary.");
+                        return true;
+                    }
 
                 case "REST":
                     if (arg == "0")
@@ -602,17 +609,27 @@ namespace FtpBackend
 
             long bytes = 0;
             string transferError = null;
+            var transfer = new TransferReporter(fileName, PredictName(fileName), _remoteIp.ToString(), _allocSize);
+            _allocSize = -1;
             try
             {
                 using (data)
                 using (var file = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, AsyncUtil.BufferSize, true))
                 {
-                    bytes = await AsyncUtil.CopyAsync(data.Stream, file, _options.DataTimeoutSeconds);
+                    bytes = await AsyncUtil.CopyAsync(data.Stream, file, _options.DataTimeoutSeconds, transfer);
                 }
             }
             catch (Exception ex)
             {
                 transferError = ex.Message;
+            }
+            if (transferError == null)
+            {
+                transfer.Done(bytes);
+            }
+            else
+            {
+                transfer.Failed(bytes);
             }
 
             if (transferError != null)
@@ -650,6 +667,12 @@ namespace FtpBackend
                 await ReplyAsync(226, "Transfer complete.");
             }
             return true;
+        }
+
+        private string PredictName(string fileName)
+        {
+            ParsedPhotoName parsed;
+            return PhotoProcessor.TryParse(fileName, out parsed) ? PhotoProcessor.BuildName(parsed, _processor.LineId) : null;
         }
 
         private async Task<bool> CmdListAsync(string cmd, string arg)

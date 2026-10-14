@@ -1,4 +1,4 @@
-# FTP Photo Renamer
+# FRT Cam - System Rename
 
 Aplikasi Windows untuk **menerima foto via FTP**, lalu otomatis **me-rename** dan
 menyimpannya ke folder tujuan.
@@ -6,6 +6,27 @@ menyimpannya ke folder tujuan.
 - GUI: **Python + PySide6**
 - Backend: **C#** (async, banyak koneksi diproses paralel)
 - Build langsung jadi **1 file `.exe`** dengan `build.bat`
+
+## Tampilan
+
+Tema gelap dengan menu samping:
+
+- **Dashboard**:
+  - kartu **Koneksi** (mode Server/Client, status "Terhubung") dan **Penamaan & Penyimpanan**
+  - tombol **Mulai / Stop** dan grafik **Aktivitas FTP 1 menit terakhir**
+  - kartu **Transfer Saat Ini**: nama file, progress, ukuran, kecepatan
+  - 6 kartu statistik: Diterima, Disimpan, Duplikat, Tidak sesuai, Gagal, Koneksi aktif.
+    Angka besar = sejak aplikasi dibuka, "+N hari ini" = total hari ini.
+  - tabel **File Diterima (50 terbaru)**: cari nama file, filter status, Bersihkan,
+    Auto-refresh 3 detik (bisa dimatikan), dan tombol mata untuk melihat foto
+  - panel **Foto terakhir disimpan**: zoom (atau scroll mouse), layar penuh, foto sebelumnya/berikutnya,
+    thumbnail 12 foto terakhir, serta info code, waktu foto, pengirim, waktu diterima, ukuran dan resolusi
+- **Log Aktivitas**: 50 baris log terbaru.
+- **File Diterima**: tabel yang sama dalam ukuran penuh.
+- **Tentang**.
+
+Jendela tanpa bingkai Windows. Geser lewat area judul, klik dua kali untuk maximize, dan ubah ukuran
+dari tepi jendela. Opsi *Mulai otomatis saat aplikasi dibuka* ada di tombol roda gigi pada kartu Koneksi.
 
 ## Mode koneksi
 
@@ -57,10 +78,11 @@ Format simpan: `LINE-ID_YYYYMMDD_HHMMSS_CODE.jpg`.
   - Opsional: simpan duplikat ke subfolder `_duplikat` (default: dibuang).
 - Tombol **Browse** untuk memilih folder tujuan, dan **Buka** untuk membuka folder.
 - Panel **Foto terakhir disimpan**: menampilkan foto terbaru yang berhasil disimpan, beserta
-  nama file, code, waktu foto dan pengirim (klik dua kali untuk membuka foto).
+  nama file, code, waktu foto, pengirim, ukuran dan resolusi (klik dua kali untuk membuka foto).
 - Tabel file diterima dan log di layar hanya menampilkan **50 data terbaru**, supaya aplikasi tetap
   ringan walau berjalan terus-menerus. Data lengkap disimpan ke file txt per hari (lihat di bawah).
-- Statistik jumlah diterima / disimpan / duplikat / tidak sesuai / gagal.
+- Statistik jumlah diterima / disimpan / duplikat / tidak sesuai / gagal. Angka "hari ini" dibaca
+  ulang dari log txt hari ini, jadi tetap benar setelah aplikasi dibuka ulang.
 - Pengaturan tersimpan otomatis di `config.json`, dengan opsi *Mulai otomatis saat aplikasi dibuka*.
 
 **File yang formatnya tidak sesuai** (tidak ada tanggal-jam atau CODE kosong) **tidak disimpan**
@@ -157,12 +179,18 @@ backend/        backend C# (FtpBackend.exe)
   DailyTextLog.cs     file txt yang berganti setiap hari
 gui/            GUI PySide6
   main.py             entry point
-  main_window.py      jendela utama
-  photo_preview.py    panel foto terakhir disimpan
+  main_window.py      jendela utama (menu samping, dashboard, halaman lain)
+  theme.py            warna + style sheet tema gelap
+  icons.py            ikon garis (SVG) untuk semua tombol
+  widgets.py          kartu, kartu statistik, grafik aktivitas, transfer, toggle, penampil foto
+  photo_panel.py      panel foto terakhir disimpan (zoom, layar penuh, thumbnail)
+  received_table.py   tabel File Diterima (filter, auto-refresh, tombol lihat)
+  stats.py            hitungan sejak dibuka, hari ini, aktivitas per detik/menit
   backend_client.py   menjalankan backend (QProcess)
   naming.py           preview aturan rename
   app_config.py       simpan/muat config.json
 tools/test_upload.py  kirim foto uji
+assets/app.ico        ikon aplikasi (.exe)
 build.bat             build semua menjadi dist\FtpPhotoRenamer.exe
 ```
 

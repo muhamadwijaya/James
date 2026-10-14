@@ -18,7 +18,7 @@ set "VENV=%ROOT%.venv"
 set "VPY=%VENV%\Scripts\python.exe"
 
 echo ============================================================
-echo   Build %APP_NAME%  [GUI PySide6 + backend C#]
+echo   Build %APP_NAME% - FRT Cam  [GUI PySide6 + backend C#]
 echo ============================================================
 echo.
 
@@ -96,6 +96,7 @@ echo [3/4] Build GUI menjadi .exe dengan PyInstaller ...
   --specpath "%BUILD%" ^
   --paths "%ROOT%gui" ^
   --add-binary "%BACKEND_OUT%\FtpBackend.exe;backend" ^
+  --icon "%ROOT%assets\app.ico" ^
   "%ROOT%gui\main.py"
 if errorlevel 1 goto :fail
 if not exist "%DIST%\%APP_NAME%.exe" goto :fail

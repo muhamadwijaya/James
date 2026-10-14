@@ -206,7 +206,7 @@ namespace FtpBackend
             return entries;
         }
 
-        public async Task<long> DownloadAsync(string directory, string name, Stream destination)
+        public async Task<long> DownloadAsync(string directory, string name, Stream destination, TransferReporter progress)
         {
             await ChangeDirectoryAsync(directory);
             TcpClient data = await OpenDataAsync();
@@ -220,7 +220,7 @@ namespace FtpBackend
                 long bytes;
                 using (NetworkStream stream = data.GetStream())
                 {
-                    bytes = await AsyncUtil.CopyAsync(stream, destination, _timeoutSeconds);
+                    bytes = await AsyncUtil.CopyAsync(stream, destination, _timeoutSeconds, progress);
                 }
                 data.Close();
                 reply = await ReadReplyAsync();
