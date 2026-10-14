@@ -406,6 +406,14 @@ namespace FtpBackend
 
         private async Task DownloadAsync(FtpClient client, RemoteEntry entry)
         {
+            if (!_processor.KeepUnmatched && !PhotoProcessor.IsMatch(entry.Name))
+            {
+                // Not saved anyway: only log the name, no need to download the photo.
+                FinishRemoteFile(entry, _processor.RecordUnmatched(entry.Name, _options.Host, entry.Size), entry.Size);
+                await DeleteRemoteAsync(client, entry);
+                return;
+            }
+
             string tempPath = _processor.CreateTempPath();
             long bytes;
             try
@@ -421,7 +429,7 @@ namespace FtpBackend
                 throw;
             }
 
-            PhotoResult result = _processor.Complete(tempPath, entry.Name);
+            PhotoResult result = _processor.Complete(tempPath, entry.Name, _options.Host, bytes);
             if (result.Status == PhotoStatus.Error)
             {
                 // Local problem (e.g. disk): keep the file on the server and retry next scan.
@@ -433,6 +441,17 @@ namespace FtpBackend
                 return;
             }
 
+            if (result.Held)
+            {
+                PhotoProcessor.TryDelete(result.FinalPath);
+                result.FinalPath = null;
+            }
+            FinishRemoteFile(entry, result, bytes);
+            await DeleteRemoteAsync(client, entry);
+        }
+
+        private void FinishRemoteFile(RemoteEntry entry, PhotoResult result, long bytes)
+        {
             lock (_sync)
             {
                 _done.Add(StateKey(entry.FullPath, entry.Size));
@@ -441,17 +460,21 @@ namespace FtpBackend
                 _retryAfter.Remove(entry.FullPath);
             }
             EmitFileEvent(result, bytes);
+        }
 
-            if (_options.DeleteAfterDownload)
+        private async Task DeleteRemoteAsync(FtpClient client, RemoteEntry entry)
+        {
+            if (!_options.DeleteAfterDownload)
             {
-                try
-                {
-                    await client.DeleteAsync(entry.Directory, entry.Name);
-                }
-                catch (FtpException ex)
-                {
-                    EventSink.Log("warn", "File sudah diambil tapi gagal dihapus di server: " + entry.FullPath + " (" + ex.Message + ")");
-                }
+                return;
+            }
+            try
+            {
+                await client.DeleteAsync(entry.Directory, entry.Name);
+            }
+            catch (FtpException ex)
+            {
+                EventSink.Log("warn", "File sudah diambil tapi gagal dihapus di server: " + entry.FullPath + " (" + ex.Message + ")");
             }
         }
 

@@ -21,6 +21,7 @@ namespace FtpBackend
         public bool Dedup = true;
         public int DedupMinutes;
         public bool KeepDuplicates;
+        public bool KeepUnmatched;
         public int PassiveMin = 50000;
         public int PassiveMax = 50100;
         public int IdleTimeout = 600;
@@ -59,6 +60,8 @@ namespace FtpBackend
             "  --no-dedup               Simpan semua foto walau code sama\n" +
             "  --dedup-minutes <n>      Rentang duplikat dalam menit (0 = selamanya)\n" +
             "  --keep-duplicates        Simpan duplikat ke subfolder _duplikat\n" +
+            "  --keep-unmatched         Simpan foto yang formatnya tidak sesuai ke _tidak_sesuai\n" +
+            "                           (default: tidak disimpan, hanya dicatat di _log\\*.txt)\n" +
             "  --pasv-min <n>           Port pasif minimum (0 = otomatis)\n" +
             "  --pasv-max <n>           Port pasif maksimum\n" +
             "\n" +
@@ -135,7 +138,8 @@ namespace FtpBackend
                 return Fail("LINE-ID tidak boleh kosong");
             }
 
-            var processor = new PhotoProcessor(settings.Target, lineId, settings.Dedup, settings.DedupMinutes, settings.KeepDuplicates);
+            var processor = new PhotoProcessor(settings.Target, lineId, settings.Dedup, settings.DedupMinutes, settings.KeepDuplicates,
+                settings.KeepUnmatched);
             int knownCodes;
             try
             {
@@ -300,6 +304,7 @@ namespace FtpBackend
                         case "--no-dedup": settings.Dedup = false; break;
                         case "--dedup-minutes": settings.DedupMinutes = NextInt(args, ref i); break;
                         case "--keep-duplicates": settings.KeepDuplicates = true; break;
+                        case "--keep-unmatched": settings.KeepUnmatched = true; break;
                         case "--pasv-min": settings.PassiveMin = NextInt(args, ref i); break;
                         case "--pasv-max": settings.PassiveMax = NextInt(args, ref i); break;
                         case "--idle-timeout": settings.IdleTimeout = NextInt(args, ref i); break;

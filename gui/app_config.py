@@ -46,6 +46,7 @@ DEFAULTS: dict = {
     "dedup": True,
     "dedup_minutes": 0,
     "keep_duplicates": False,
+    "keep_unmatched": False,
     "autostart": False,
 }
 

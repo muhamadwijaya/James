@@ -18,11 +18,17 @@ Aturan rename dan anti duplikat sama untuk kedua mode.
 
 ## Format nama file
 
-| | Format | Contoh |
-|---|---|---|
-| Diterima dari FTP | `CODE_YYYY_MM_DD_HH_MM_SS.jpg` | `3975 264 812_2026_10_10_00_08_46.jpg` |
-| Disimpan ke folder | `LINE-ID_YYYYMMDD_HHMMSS_CODE.jpg` | `00001_20261010_000846_3975264812.jpg` |
+| Diterima dari FTP | Disimpan ke folder |
+|---|---|
+| `3975 264 812_2026_10_10_00_08_46.jpg` | `00001_20261010_000846_3975264812.jpg` |
+| `https&&&aslibos.com&scan&BXXAXESPP2026_10_14_12_16_53.jpg` | `00001_20261014_121653_BXXAXESPP.jpg` |
 
+Format simpan: `LINE-ID_YYYYMMDD_HHMMSS_CODE.jpg`.
+
+- Aplikasi mencari tanggal-jam `YYYY_MM_DD_HH_MM_SS` (sampai detik) di nama file.
+- **CODE** = teks tepat sebelum tanggal, setelah pemisah terakhir (`&` `/` `=` `?` `#` `_` `:` `;`).
+  Awalan seperti `https&&&aslibos.com&scan&` diabaikan, panjang CODE bebas, dan CODE boleh
+  langsung menempel ke tanggal (`BXXAXESPP2026_...`).
 - Spasi di CODE dihapus (`3975 264 812` → `3975264812`).
 - LINE-ID diisi di aplikasi dan bisa diganti saat sedang berjalan.
 - Kolom **Uji nama file** di aplikasi menampilkan hasil rename sebelum server dijalankan.
@@ -53,11 +59,23 @@ Aturan rename dan anti duplikat sama untuk kedua mode.
 - Tabel file diterima (klik dua kali untuk membuka foto), statistik, dan log.
 - Pengaturan tersimpan otomatis di `config.json`, dengan opsi *Mulai otomatis saat aplikasi dibuka*.
 
+**File yang formatnya tidak sesuai** (tidak ada tanggal-jam atau CODE kosong) **tidak disimpan**
+supaya tidak memakan ruang hardisk. Nama file-nya dicatat di log txt harian:
+
+```
+_log\tidak_sesuai_2026-10-14.txt
+2026-10-14 12:17:41 | 192.168.1.50 | 48213 bytes | snapshot.jpg
+```
+
+Jika foto tersebut tetap ingin disimpan, centang *Simpan foto yang formatnya tidak sesuai*
+(foto masuk ke `_tidak_sesuai`). Tombol **Buka log txt** membuka folder `_log`.
+
 Folder khusus di dalam folder tujuan:
 
 | Folder | Isi |
 |---|---|
-| `_tidak_sesuai` | file yang namanya tidak sesuai format (nama asli dipertahankan) |
+| `_log` | log txt harian berisi nama file yang formatnya tidak sesuai |
+| `_tidak_sesuai` | foto yang formatnya tidak sesuai, hanya jika opsinya dicentang |
 | `_duplikat` | duplikat, hanya jika opsinya dicentang |
 | `.incoming` | file yang sedang diterima (sementara) |
 
@@ -96,7 +114,8 @@ File `.exe` ini sudah berisi GUI dan backend, jadi cukup salin satu file ini ke 
 .venv\Scripts\python tools\test_upload.py --host 127.0.0.1 --port 21 --user admin --password admin
 ```
 
-Script ini mengirim 4 file: 2 tersimpan, 1 duplikat, 1 format tidak sesuai.
+Script ini mengirim 5 file (format lama dan format `https&&&...`): 2 tersimpan, 2 duplikat,
+1 format tidak sesuai (hanya dicatat di log).
 
 ## Struktur proyek
 

@@ -3,11 +3,12 @@
 Contoh:
     python tools/test_upload.py --host 127.0.0.1 --port 21 --user admin --password admin
 
-Mengirim 4 file:
-  1. 3975 264 812_<sekarang>.jpg        -> disimpan
-  2. 3975 264 812_<sekarang+5 detik>.jpg -> duplikat (code sama)
-  3. 2222 222 222_<sekarang>.jpg        -> disimpan
-  4. snapshot.jpg                       -> format tidak sesuai
+Mengirim 5 file:
+  1. 3975 264 812_<sekarang>.jpg                                  -> disimpan
+  2. 3975 264 812_<sekarang+5 detik>.jpg                          -> duplikat (code sama)
+  3. https&&&aslibos.com&scan&BXXAXESPP<sekarang>.jpg             -> disimpan, code BXXAXESPP
+  4. https&&&aslibos.com&scan&BXXAXESPP<sekarang+1 detik>.jpg     -> duplikat
+  5. snapshot.jpg                                                 -> format tidak sesuai (hanya dicatat di log)
 """
 from __future__ import annotations
 
@@ -35,7 +36,8 @@ def main() -> None:
     names = [
         f"3975 264 812_{now:%Y_%m_%d_%H_%M_%S}.jpg",
         f"3975 264 812_{now + timedelta(seconds=5):%Y_%m_%d_%H_%M_%S}.jpg",
-        f"2222 222 222_{now:%Y_%m_%d_%H_%M_%S}.jpg",
+        f"https&&&aslibos.com&scan&BXXAXESPP{now:%Y_%m_%d_%H_%M_%S}.jpg",
+        f"https&&&aslibos.com&scan&BXXAXESPP{now + timedelta(seconds=1):%Y_%m_%d_%H_%M_%S}.jpg",
         "snapshot.jpg",
     ]
 
@@ -46,7 +48,7 @@ def main() -> None:
     ftp.set_pasv(not args.active)
     for name in names:
         reply = ftp.storbinary("STOR " + name, io.BytesIO(fake_jpeg()))
-        print(f"{name:45s} {reply}")
+        print(f"{name:60s} {reply}")
     ftp.quit()
     print("Selesai. Lihat tab 'File diterima' di aplikasi.")
 

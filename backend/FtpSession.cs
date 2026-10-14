@@ -86,6 +86,8 @@ namespace FtpBackend
         private TcpListener _passive;
         private IPEndPoint _active;
         private string _renameFrom;
+        // Last unmatched upload that was not kept: held briefly in case the client renames it.
+        private string _heldPath;
         private volatile bool _busy;
         private volatile bool _stopRequested;
         private volatile bool _closed;
@@ -199,7 +201,19 @@ namespace FtpBackend
             finally
             {
                 Abort();
+                ReleaseHeld(null);
             }
+        }
+
+        /// <summary>Deletes the held unmatched upload (unless it is <paramref name="keep"/>).</summary>
+        private void ReleaseHeld(string keep)
+        {
+            string held = _heldPath;
+            if (held != null && !string.Equals(held, keep, StringComparison.Ordinal))
+            {
+                PhotoProcessor.TryDelete(held);
+            }
+            _heldPath = keep;
         }
 
         private static bool AllowedBeforeLogin(string cmd)
@@ -611,10 +625,14 @@ namespace FtpBackend
                 return true;
             }
 
-            PhotoResult result = _processor.Complete(tempPath, fileName);
+            PhotoResult result = _processor.Complete(tempPath, fileName, _remoteIp.ToString(), bytes);
             if (result.Status == PhotoStatus.Error)
             {
                 PhotoProcessor.TryDelete(tempPath);
+            }
+            else if (result.Held)
+            {
+                ReleaseHeld(result.FinalPath);
             }
 
             var record = new UploadRecord();
@@ -707,7 +725,14 @@ namespace FtpBackend
                 if (record.Result.Status == PhotoStatus.Unmatched)
                 {
                     PhotoProcessor.TryDelete(record.Result.FinalPath);
-                    EventSink.Log("info", "File uji dihapus atas permintaan klien: " + record.Result.OriginalName);
+                    if (string.Equals(_heldPath, record.Result.FinalPath, StringComparison.Ordinal))
+                    {
+                        _heldPath = null;
+                    }
+                    if (!record.Result.Held)
+                    {
+                        EventSink.Log("info", "File uji dihapus atas permintaan klien: " + record.Result.OriginalName);
+                    }
                 }
                 _uploads.Remove(path);
             }
@@ -734,10 +759,15 @@ namespace FtpBackend
             // Some devices upload under a temporary name and rename afterwards.
             if (record.Result.Status == PhotoStatus.Unmatched && File.Exists(record.Result.FinalPath))
             {
-                PhotoResult result = _processor.Complete(record.Result.FinalPath, FileNameOf(to));
+                string oldPath = record.Result.FinalPath;
+                PhotoResult result = _processor.Complete(oldPath, FileNameOf(to), _remoteIp.ToString(), record.Size);
                 if (result.Status != PhotoStatus.Error)
                 {
                     record.Result = result;
+                    if (string.Equals(_heldPath, oldPath, StringComparison.Ordinal) && !result.Held)
+                    {
+                        _heldPath = null;
+                    }
                     EmitFileEvent(result, "rename", record.Size, "unmatched");
                 }
                 else
@@ -763,7 +793,7 @@ namespace FtpBackend
                 default: status = "error"; break;
             }
             EventSink.Emit("file", "status", status, "source", source, "client", _remoteIp.ToString(),
-                "original", result.OriginalName, "name", result.NewName, "path", result.FinalPath,
+                "original", result.OriginalName, "name", result.NewName, "path", result.Held ? null : result.FinalPath,
                 "code", result.Code, "bytes", bytes, "message", result.Message, "previous", previous);
         }
 

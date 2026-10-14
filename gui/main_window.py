@@ -313,6 +313,15 @@ class MainWindow(QMainWindow):
             "N menit: code yang sama boleh disimpan lagi setelah lewat N menit."
         )
         self.keep_dup_check = QCheckBox('Simpan duplikat ke subfolder "_duplikat" (tidak dibuang)')
+        self.keep_unmatched_check = QCheckBox('Simpan foto yang formatnya tidak sesuai ke "_tidak_sesuai"')
+        self.keep_unmatched_check.setToolTip(
+            "Tidak dicentang (disarankan): foto tidak disimpan, nama file hanya dicatat di\n"
+            "_log\\tidak_sesuai_YYYY-MM-DD.txt supaya tidak memakan ruang hardisk."
+        )
+        self.keep_unmatched_check.toggled.connect(self._update_preview)
+        log_btn = QPushButton("Buka log txt")
+        log_btn.setToolTip("Buka folder _log berisi daftar file yang formatnya tidak sesuai")
+        log_btn.clicked.connect(self._open_log_dir)
 
         self.test_edit = QLineEdit(naming.EXAMPLE_INCOMING)
         self.test_edit.setToolTip("Ketik/tempel nama file dari kamera untuk melihat hasil rename")
@@ -336,14 +345,18 @@ class MainWindow(QMainWindow):
         dedup_row.addStretch(1)
         grid.addLayout(dedup_row, 3, 1, 1, 3)
         grid.addWidget(self.keep_dup_check, 4, 1, 1, 3)
+        grid.addWidget(self.keep_unmatched_check, 5, 1, 1, 2)
+        grid.addWidget(log_btn, 5, 3)
 
-        grid.addWidget(QLabel("Uji nama file"), 5, 0)
-        grid.addWidget(self.test_edit, 5, 1, 1, 3)
-        grid.addWidget(QLabel("Hasil rename"), 6, 0)
-        grid.addWidget(self.preview_label, 6, 1, 1, 3)
-        grid.setRowStretch(7, 1)
+        grid.addWidget(QLabel("Uji nama file"), 6, 0)
+        grid.addWidget(self.test_edit, 6, 1, 1, 3)
+        grid.addWidget(QLabel("Hasil rename"), 7, 0)
+        grid.addWidget(self.preview_label, 7, 1, 1, 3)
+        grid.setRowStretch(8, 1)
 
-        self._naming_widgets = [self.target_edit, browse, self.dedup_check, self.dedup_spin, self.keep_dup_check]
+        self._naming_widgets = [
+            self.target_edit, browse, self.dedup_check, self.dedup_spin, self.keep_dup_check, self.keep_unmatched_check,
+        ]
         return box
 
     def _build_control_row(self) -> QHBoxLayout:
@@ -453,6 +466,7 @@ class MainWindow(QMainWindow):
         self.dedup_check.setChecked(cfg["dedup"])
         self.dedup_spin.setValue(cfg["dedup_minutes"])
         self.keep_dup_check.setChecked(cfg["keep_duplicates"])
+        self.keep_unmatched_check.setChecked(cfg["keep_unmatched"])
         self.autostart_check.setChecked(cfg["autostart"])
 
     def _mode(self) -> str:
@@ -482,6 +496,7 @@ class MainWindow(QMainWindow):
             "dedup": self.dedup_check.isChecked(),
             "dedup_minutes": self.dedup_spin.value(),
             "keep_duplicates": self.keep_dup_check.isChecked(),
+            "keep_unmatched": self.keep_unmatched_check.isChecked(),
             "autostart": self.autostart_check.isChecked(),
         }
 
@@ -569,6 +584,8 @@ class MainWindow(QMainWindow):
             args.append("--no-dedup")
         if cfg["keep_duplicates"]:
             args.append("--keep-duplicates")
+        if cfg["keep_unmatched"]:
+            args.append("--keep-unmatched")
 
         self._stop_requested = False
         self._last_error = None
@@ -603,6 +620,13 @@ class MainWindow(QMainWindow):
         folder = Path(self.target_edit.text().strip())
         if not folder.is_dir():
             QMessageBox.information(self, "Folder tujuan", "Folder belum ada. Folder akan dibuat saat dimulai.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _open_log_dir(self) -> None:
+        folder = Path(self.target_edit.text().strip()) / "_log"
+        if not folder.is_dir():
+            QMessageBox.information(self, "Log txt", "Belum ada file dengan format tidak sesuai yang dicatat.")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
@@ -683,7 +707,8 @@ class MainWindow(QMainWindow):
             where = "disimpan ke _duplikat" if event.get("path") else "dibuang"
             self._append_log("warn", f"Duplikat code {event.get('code')}: {original} ({where})", event.get("time"))
         elif status == "unmatched":
-            self._append_log("warn", f"Format nama tidak sesuai: {original} (disimpan ke _tidak_sesuai)", event.get("time"))
+            where = "disimpan ke _tidak_sesuai" if event.get("path") else "foto tidak disimpan, dicatat di _log"
+            self._append_log("warn", f"Format nama tidak sesuai: {original} ({where})", event.get("time"))
         else:
             self._append_log("error", f"Gagal: {original} - {event.get('message')}", event.get("time"))
 
@@ -747,7 +772,10 @@ class MainWindow(QMainWindow):
             self.preview_label.setText(result)
             self.preview_label.setStyleSheet("color:#1e8e3e; font-weight:600;")
         else:
-            self.preview_label.setText("Format tidak sesuai -> masuk ke _tidak_sesuai")
+            if self.keep_unmatched_check.isChecked():
+                self.preview_label.setText("Format tidak sesuai -> masuk ke _tidak_sesuai")
+            else:
+                self.preview_label.setText("Format tidak sesuai -> tidak disimpan, dicatat di log txt")
             self.preview_label.setStyleSheet("color:#dc2626;")
 
     def _append_log(self, level: str, message: str, time_text: str | None = None) -> None:
