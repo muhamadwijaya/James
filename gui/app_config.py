@@ -48,9 +48,11 @@ DEFAULTS: dict = {
     "keep_duplicates": False,
     "keep_unmatched": False,
     "autostart": False,
-    # kolektor (collector -> CSV per batch)
+    # kolektor (TCP/IP client -> CSV per batch, separate from the FTP rename)
     "collect_number": "000001",
     "collect_folder": "",
+    "collect_host": "",
+    "collect_port": 9004,
 }
 
 

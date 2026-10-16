@@ -9,10 +9,12 @@ menyimpannya ke folder tujuan.
 
 ## Baru di versi 2
 
-- **Kolektor**: kumpulkan semua data yang diterima dari FTP ke **satu file CSV per batch**.
-  Duplikat (code / link yang sama) **diabaikan**, dan bisa juga **menerima string link**
-  yang diketik/ditempel manual. Alur: isi nama file **Alb-NNNNNN** (angka diisi manual),
-  klik **Start** (data dikunci ke CSV itu), klik **Done** bila selesai. Ada tombol **Export CSV**.
+- **Kolektor (TCP/IP)**: koneksi sendiri, terpisah dari FTP. Aplikasi menjadi **client TCP/IP**:
+  isi **IP + Port server** yang mengirim data, lalu setiap data yang diterima (teks, kode, link)
+  masuk ke **satu file CSV per batch** dengan **2 kolom: Data dan Timestamp**. Data duplikat
+  **diabaikan**. Alur: isi nama file **Alb-NNNNNN** (angka diisi manual), klik **Start**
+  (CSV dikunci + mulai menyambung), klik **Done** bila selesai. Ada tombol **Export CSV**.
+  Rename foto tetap lewat **FTP** seperti biasa (tidak tercampur).
 - **Aktivasi (model patch)**: aplikasi dikunci per komputer dengan **HWID + registry** dan
   **kode aktivasi** yang ditandatangani (Ed25519), plus **OTP**. Kode dibuat oleh vendor
   (lihat `tools/license_tool.py`) dan diminta ke nomor vendor. Detail di bagian **Aktivasi** di bawah.
@@ -136,22 +138,42 @@ Folder khusus di dalam folder tujuan:
 | `_duplikat` | duplikat, hanya jika opsinya dicentang |
 | `.incoming` | file yang sedang diterima (sementara) |
 
-## Kolektor (CSV per batch)
+## Kolektor (TCP/IP client, CSV per batch)
 
-Menu **Kolektor** mengumpulkan data yang diterima dari FTP ke satu file CSV.
+Menu **Kolektor** punya **koneksi sendiri lewat IP** (bukan FTP). Aplikasi ini adalah **client**:
+ia menyambung ke **IP + Port server** (alat/scanner/PLC/PC yang mengirim data) dan menerima data darinya.
+Rename foto tetap berjalan lewat FTP di Dashboard, keduanya tidak saling tercampur.
 
 1. Isi **Nama file**: `Alb-` + angka (diisi manual, mis. `000123` → `Alb-000123`).
-2. Pilih **Folder CSV** (default `folder tujuan\collect`).
-3. Klik **Start** → CSV dibuka/dikunci (`Alb-000123.csv`), nama batch terkunci, mulai mengumpulkan.
-4. Setiap foto yang diterima dari FTP (dan link/string yang ditambah manual di kotak *Tambah manual*)
-   dicatat satu baris. **Duplikat diabaikan** (berdasarkan code; kalau tidak ada code, berdasarkan link).
-5. Klik **Done** bila selesai (nama batch terbuka lagi, nomor otomatis naik ke batch berikutnya).
-6. **Export CSV** membuat salinan CSV ke lokasi lain kapan saja.
+2. Isi **IP Server** dan **Port** yang mengirim data (mis. `192.168.1.50` port `9004`).
+3. Pilih **Folder CSV** (default `folder tujuan\collect`).
+4. Klik **Start** → CSV dibuka/dikunci (`Alb-000123.csv`), nama batch + IP/Port terkunci,
+   aplikasi menyambung ke server. Status koneksi tampil di kanan atas (hijau = terhubung).
+5. Setiap data yang diterima dicatat satu baris. **Duplikat diabaikan** (data yang sama persis).
+   Data juga bisa diketik/ditempel di kotak *Tambah manual* (ikut aturan duplikat yang sama).
+6. Klik **Done** bila selesai (koneksi ditutup, nama batch terbuka lagi, nomor otomatis naik).
+7. **Export CSV** membuat salinan CSV ke lokasi lain kapan saja.
 
+Isi CSV hanya **2 kolom**:
+
+```
+Data;Timestamp
+https&&&aslibos.com&scan&BXXAXESPP2026_10_14_12_16_53.jpg;2026-10-16 08:00:01
+BARCODE-0001;2026-10-16 08:00:03
+```
+
+- **Timestamp** = waktu data diterima aplikasi (`YYYY-MM-DD HH:MM:SS`).
+- Satu data = satu pesan dari server, diakhiri `CR`, `LF`, `CRLF`, `ETX` atau `NUL`
+  (bingkai `STX ... ETX` juga dikenali). Kalau server mengirim tanpa akhiran, data dianggap
+  selesai setelah jeda singkat (0,3 detik).
+- Kalau server belum aktif atau koneksi putus, aplikasi **menyambung ulang otomatis** tiap 3 detik
+  selama sesi masih Start. Kejadian sambung/putus dicatat di **Log Aktivitas**.
 - Baris ditulis ke CSV secara langsung (aman walau aplikasi ditutup); memulai batch yang sama lagi
-  akan melanjutkan tanpa menggandakan baris lama.
+  akan melanjutkan tanpa menggandakan data lama. File lama dengan kolom lain tidak akan ditimpa
+  (aplikasi meminta nomor batch lain).
 - CSV memakai pemisah `;` dan UTF-8 BOM, jadi langsung rapi dibuka di Excel (Indonesia).
-- Kolom: No; Batch; Waktu diterima; Waktu foto; Code; **Link/String asli**; Nama baru; Status; Dari; Ukuran.
+- Coba tanpa alat: jalankan `python tools/test_tcp_server.py --port 9004`, lalu di Kolektor isi
+  IP `127.0.0.1` port `9004` dan klik Start.
 
 ## Aktivasi (model patch, HWID + registry + OTP)
 
@@ -268,8 +290,9 @@ gui/            GUI PySide6
   backend_client.py   menjalankan backend (QProcess)
   naming.py           preview aturan rename
   app_config.py       simpan/muat config.json
-  collector.py        kolektor: sesi batch + tulis CSV + anti duplikat
-  collector_page.py   halaman Kolektor
+  collector.py        kolektor: sesi batch + tulis CSV (Data, Timestamp) + anti duplikat
+  collector_page.py   halaman Kolektor (IP + Port, Start/Done)
+  tcp_receiver.py     client TCP/IP kolektor (sambung ulang otomatis)
   activation.py       aktivasi: HWID + kode Ed25519 + OTP (verifikasi)
   activation_dialog.py jendela aktivasi (aplikasi utama)
   vendor_app.py       aplikasi PEMBUAT LISENSI (khusus vendor)
@@ -277,6 +300,7 @@ gui/            GUI PySide6
   hwid.py             hitung HWID komputer
   license_store.py    simpan aktivasi di registry + file
 tools/test_upload.py  kirim foto uji
+tools/test_tcp_server.py server TCP uji untuk Kolektor
 tools/license_tool.py pembuat kode aktivasi (command line, khusus vendor)
 assets/app.ico        ikon aplikasi (.exe)
 build.bat             build aplikasi utama -> dist\FtpPhotoRenamer.exe

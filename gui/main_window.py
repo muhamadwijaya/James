@@ -46,7 +46,7 @@ from stats import Stats
 from widgets import ActivityChart, Card, IconBox, StateBadge, StatCard, StatusBox, TransferCard, qcolor
 
 APP_TITLE = "FRT Cam"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 # Only the newest rows/lines are kept on screen so the UI stays light when running
 # continuously; the full data is in the daily txt files in <folder tujuan>\_log.
 MAX_TABLE_ROWS = 50
@@ -674,6 +674,7 @@ class MainWindow(QMainWindow):
     def _build_collector_page(self) -> QWidget:
         self.collector_page = CollectorPage(self.collector)
         self.collector_page.sessionChanged.connect(self._on_collector_session)
+        self.collector_page.logMessage.connect(self._append_log)
         return self.collector_page
 
     def _build_log_page(self) -> QWidget:
@@ -710,7 +711,9 @@ class MainWindow(QMainWindow):
             "<li>Mode <b>Server</b> (kamera mengirim ke aplikasi) dan <b>Client</b> (ambil dari server FTP lain)</li>"
             "<li>Code yang sama hanya disimpan 1 file</li>"
             "<li>Nama yang tidak sesuai tidak disimpan, cukup dicatat di log txt</li>"
-            "<li>Log txt per hari di folder tujuan\\_log: diterima, log, tidak_sesuai</li></ul>")
+            "<li>Log txt per hari di folder tujuan\\_log: diterima, log, tidak_sesuai</li>"
+            "<li><b>Kolektor</b>: koneksi TCP/IP sendiri (IP + Port server), data ke CSV per batch "
+            "(Data, Timestamp), duplikat diabaikan</li></ul>")
         text.setWordWrap(True)
         text.setTextFormat(Qt.TextFormat.RichText)
         row.addWidget(text, 1)
@@ -749,7 +752,7 @@ class MainWindow(QMainWindow):
         self.autostart_action.setChecked(cfg["autostart"])
         self.autostart_action.blockSignals(False)
         collect_folder = cfg["collect_folder"] or str(Path(cfg["target_dir"]) / "collect")
-        self.collector_page.set_config(cfg["collect_number"], collect_folder)
+        self.collector_page.set_config(cfg["collect_number"], collect_folder, cfg["collect_host"], cfg["collect_port"])
 
     def _set_dedup_minutes(self, minutes: int) -> None:
         index = self.dedup_combo.findData(minutes)
@@ -789,6 +792,8 @@ class MainWindow(QMainWindow):
             "autostart": self.autostart_action.isChecked(),
             "collect_number": self.collector_page.current_number(),
             "collect_folder": self.collector_page.current_folder(),
+            "collect_host": self.collector_page.current_host(),
+            "collect_port": self.collector_page.current_port(),
         }
 
     def _validate(self, cfg: dict) -> list[str]:
@@ -961,7 +966,6 @@ class MainWindow(QMainWindow):
     def _on_file_event(self, event: dict) -> None:
         self.stats.record(event)
         self.model.add(event)
-        self.collector_page.feed_event(event)
         status = event.get("status", "error")
         if status == "saved" and event.get("path"):
             self.photo.show_saved(event)
@@ -1090,15 +1094,22 @@ class MainWindow(QMainWindow):
         self.log_view.appendHtml(f'<span style="color:{color}">{line}</span>' if color else line)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        running = []
         if self.backend.is_running():
+            running.append(f"{self._running_mode.capitalize()} FTP")
+        if self.collector.active:
+            running.append(f"Kolektor {self.collector.batch}")
+        if running:
             answer = QMessageBox.question(
-                self, "Keluar", f"{self._running_mode.capitalize()} FTP masih berjalan. Hentikan dan keluar?",
+                self, "Keluar", f"{' dan '.join(running)} masih berjalan. Hentikan dan keluar?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
+        if self.backend.is_running():
             self._stop_requested = True
             self.backend.stop_blocking()
+        self.collector_page.shutdown()
         app_config.save(self._collect_config())
         event.accept()
