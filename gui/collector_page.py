@@ -40,7 +40,7 @@ class CollectModel(QAbstractTableModel):
 
     def set_rows(self, rows: list[dict]) -> None:
         self.beginResetModel()
-        self._rows = list(reversed(rows[-MAX_DISPLAY:]))   # newest first
+        self._rows = list(rows[-MAX_DISPLAY:])   # same order as the CSV (newest at the bottom)
         self.endResetModel()
 
     def rowCount(self, parent=QModelIndex()) -> int:  # noqa: N802
@@ -91,8 +91,8 @@ class CollectorPage(Card):
         texts.setSpacing(1)
         title = QLabel("Kolektor Data (TCP/IP)")
         title.setObjectName("cardTitle")
-        sub = QLabel("Sambung ke IP + Port server, data yang diterima masuk ke CSV per batch "
-                     "(kolom Data dan Timestamp, duplikat diabaikan)")
+        sub = QLabel("Sambung ke IP + Port server. Setiap link = 1 baris CSV (Data, Timestamp); "
+                     "link dipisah ; jadi baris berikutnya, duplikat diabaikan")
         sub.setObjectName("cardSubtitle")
         texts.addWidget(title)
         texts.addWidget(sub)
@@ -194,7 +194,8 @@ class CollectorPage(Card):
         manual_label = QLabel("Tambah manual")
         manual_label.setObjectName("formLabel")
         self.manual_edit = QLineEdit()
-        self.manual_edit.setPlaceholderText("Ketik / tempel data lalu Enter (masuk ke CSV yang sama, duplikat diabaikan)")
+        self.manual_edit.setPlaceholderText("Tempel link lalu Enter, mis. https://aslibos.com/scan/BXXAXESPP "
+                                           "(beberapa link pisahkan dengan ;)")
         self.manual_edit.returnPressed.connect(self._add_manual)
         self.add_btn = QPushButton("Tambah")
         self.add_btn.setIcon(icons.icon("download", theme.TEXT, 16))
@@ -273,7 +274,7 @@ class CollectorPage(Card):
 
     # ------------------------------------------------------------ receiving
     def _on_data(self, text: str) -> None:
-        if self.collector.add(text).outcome in ("added", "duplicate"):
+        if any(r.outcome in ("added", "duplicate") for r in self.collector.add(text)):
             self._dirty = True
 
     def _on_conn_status(self, state: str, message: str) -> None:
@@ -369,8 +370,8 @@ class CollectorPage(Card):
         text = self.manual_edit.text().strip()
         if not text:
             return
-        result = self.collector.add(text)
-        if result.outcome == "duplicate":
+        results = self.collector.add(text)
+        if not any(r.outcome == "added" for r in results):
             self.manual_edit.selectAll()
         else:
             self.manual_edit.clear()
@@ -380,8 +381,12 @@ class CollectorPage(Card):
     # ------------------------------------------------------------ view
     def _refresh(self) -> None:
         if self._dirty:
+            bar = self.table.verticalScrollBar()
+            follow = bar.value() >= bar.maximum() - 2      # keep following new rows unless scrolled up
             self.model.set_rows(self.collector.rows)
             self._dirty = False
+            if follow:
+                self.table.scrollToBottom()
         self.count_label.setText(f"Terkumpul: {len(self.collector.rows)}")
         self.dup_label.setText(f"Duplikat diabaikan: {self.collector.duplicates}")
         error = bool(self.collector.write_error)

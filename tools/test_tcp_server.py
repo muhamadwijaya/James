@@ -4,8 +4,12 @@ Contoh:
     python tools/test_tcp_server.py --port 9004
 
 Lalu di aplikasi, menu Kolektor: IP Server = IP komputer ini (atau 127.0.0.1), Port = 9004,
-klik Start. Setiap aplikasi tersambung, server ini mengirim satu data per --interval detik
-(diakhiri CR LF). Setiap data ke-4 sengaja diulang supaya terlihat duplikat diabaikan.
+klik Start. Setiap aplikasi tersambung, server ini mengirim satu pesan per --interval detik
+(diakhiri CR LF), bergiliran:
+  https://aslibos.com/scan/BX00001                                -> 1 baris
+  https://aslibos.com/scan/BX00002;https://aslibos.com/scan/BX00002 -> 1 baris (sama, yg kedua dibuang)
+  https://aslibos.com/scan/BX00003;https://aslibos.com/scan/BX00004 -> 2 baris (BX00004 di bawahnya)
+  https://aslibos.com/scan/BX00001                                -> duplikat, diabaikan
 Tekan Ctrl+C untuk berhenti.
 """
 from __future__ import annotations
@@ -19,14 +23,22 @@ from datetime import datetime
 
 def serve_client(conn: socket.socket, addr, interval: float, count: int) -> None:
     print(f"[{datetime.now():%H:%M:%S}] tersambung: {addr[0]}:{addr[1]}")
-    sent = []
+    link = lambda n: f"https://aslibos.com/scan/BX{n:05d}"
+    n = 0
     try:
-        for i in range(1, count + 1):
-            if i % 4 == 0 and sent:
-                data = sent[-1]                       # duplikat
+        for i in range(count):
+            kind = i % 4
+            if kind == 0:
+                n += 1
+                data = link(n)
+            elif kind == 1:
+                n += 1
+                data = f"{link(n)};{link(n)}"               # 2x sama -> 1 baris
+            elif kind == 2:
+                data = f"{link(n + 1)};{link(n + 2)}"       # 2 link beda -> 2 baris
+                n += 2
             else:
-                data = f"https&&&aslibos.com&scan&BX{i:05d}{datetime.now():%Y_%m_%d_%H_%M_%S}.jpg"
-                sent.append(data)
+                data = link(n - 3)                          # sudah pernah -> duplikat
             conn.sendall(data.encode("utf-8") + b"\r\n")
             print(f"  kirim: {data}")
             time.sleep(interval)

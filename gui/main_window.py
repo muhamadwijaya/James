@@ -46,7 +46,7 @@ from stats import Stats
 from widgets import ActivityChart, Card, IconBox, StateBadge, StatCard, StatusBox, TransferCard, qcolor
 
 APP_TITLE = "FRT Cam"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 # Only the newest rows/lines are kept on screen so the UI stays light when running
 # continuously; the full data is in the daily txt files in <folder tujuan>\_log.
 MAX_TABLE_ROWS = 50

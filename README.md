@@ -10,9 +10,10 @@ menyimpannya ke folder tujuan.
 ## Baru di versi 2
 
 - **Kolektor (TCP/IP)**: koneksi sendiri, terpisah dari FTP. Aplikasi menjadi **client TCP/IP**:
-  isi **IP + Port server** yang mengirim data, lalu setiap data yang diterima (teks, kode, link)
-  masuk ke **satu file CSV per batch** dengan **2 kolom: Data dan Timestamp**. Data duplikat
-  **diabaikan**. Alur: isi nama file **Alb-NNNNNN** (angka diisi manual), klik **Start**
+  isi **IP + Port server** yang mengirim data, lalu setiap link yang diterima
+  (mis. `https://aslibos.com/scan/BXXAXESPP`) masuk ke **satu file CSV per batch** dengan
+  **2 kolom: Data dan Timestamp**. Beberapa link dalam satu kiriman yang dipisah `;` dijadikan
+  **baris sendiri-sendiri**, dan link duplikat **diabaikan**. Alur: isi nama file **Alb-NNNNNN** (angka diisi manual), klik **Start**
   (CSV dikunci + mulai menyambung), klik **Done** bila selesai. Ada tombol **Export CSV**.
   Rename foto tetap lewat **FTP** seperti biasa (tidak tercampur).
 - **Aktivasi (model patch)**: aplikasi dikunci per komputer dengan **HWID + registry** dan
@@ -149,8 +150,8 @@ Rename foto tetap berjalan lewat FTP di Dashboard, keduanya tidak saling tercamp
 3. Pilih **Folder CSV** (default `folder tujuan\collect`).
 4. Klik **Start** → CSV dibuka/dikunci (`Alb-000123.csv`), nama batch + IP/Port terkunci,
    aplikasi menyambung ke server. Status koneksi tampil di kanan atas (hijau = terhubung).
-5. Setiap data yang diterima dicatat satu baris. **Duplikat diabaikan** (data yang sama persis).
-   Data juga bisa diketik/ditempel di kotak *Tambah manual* (ikut aturan duplikat yang sama).
+5. Setiap link yang diterima dicatat satu baris. **Duplikat diabaikan** (link yang sama persis).
+   Link juga bisa ditempel di kotak *Tambah manual* (ikut aturan yang sama).
 6. Klik **Done** bila selesai (koneksi ditutup, nama batch terbuka lagi, nomor otomatis naik).
 7. **Export CSV** membuat salinan CSV ke lokasi lain kapan saja.
 
@@ -158,9 +159,22 @@ Isi CSV hanya **2 kolom**:
 
 ```
 Data;Timestamp
-https&&&aslibos.com&scan&BXXAXESPP2026_10_14_12_16_53.jpg;2026-10-16 08:00:01
-BARCODE-0001;2026-10-16 08:00:03
+https://aslibos.com/scan/BXXAXESPP;2026-10-16 08:00:01
+https://aslibos.com/scan/BXXAXES8P;2026-10-16 08:00:03
+https://aslibos.com/scan/VZJZ35QD7;2026-10-16 08:00:03
 ```
+
+Aturan tanda `;` dalam satu kiriman:
+
+| Data yang diterima | Hasil di CSV |
+|---|---|
+| `https://aslibos.com/scan/BXXAXESPP` | 1 baris |
+| `https://aslibos.com/scan/BXXAXESPP;https://aslibos.com/scan/BXXAXESPP` | 1 baris (sama, yang setelah `;` dibuang) |
+| `https://aslibos.com/scan/BXXAXES8P;https://aslibos.com/scan/VZJZ35QD7` | 2 baris: `BXXAXES8P`, lalu `VZJZ35QD7` di baris bawahnya |
+| link yang sudah pernah masuk di batch ini | diabaikan (dihitung di "Duplikat diabaikan") |
+
+Link dari satu kiriman mendapat timestamp yang sama. Tabel di layar urutannya sama dengan CSV
+(data terbaru di bawah).
 
 - **Timestamp** = waktu data diterima aplikasi (`YYYY-MM-DD HH:MM:SS`).
 - Satu data = satu pesan dari server, diakhiri `CR`, `LF`, `CRLF`, `ETX` atau `NUL`

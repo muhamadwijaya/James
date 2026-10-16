@@ -1,9 +1,14 @@
 """Kolektor: collect data received over TCP/IP into one locked batch CSV (Alb-NNNNNN).
 
-The CSV has exactly two columns: the data as received and the timestamp it arrived.
+The CSV has exactly two columns: the data (a link) and the timestamp it arrived.
 A session is started with a batch name (e.g. Alb-000123) and a folder; from Start until
-Done every new piece of data is appended (flushed each time). Data that is already in the
-batch is a duplicate and is ignored.
+Done every new piece of data is appended (flushed each time).
+
+One received message may hold several links separated by ";" - each link becomes its own
+row, in the order received:
+    https://aslibos.com/scan/A;https://aslibos.com/scan/B  ->  row A, then row B below it
+    https://aslibos.com/scan/A;https://aslibos.com/scan/A  ->  row A only
+Data that is already in the batch is a duplicate and is ignored.
 """
 from __future__ import annotations
 
@@ -17,6 +22,12 @@ BATCH_RE = re.compile(r"^Alb-\d{4,}$")
 CSV_DELIMITER = ";"          # Indonesian Excel opens semicolon CSV without "Text to Columns"
 CSV_HEADER = ["Data", "Timestamp"]
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+DATA_SEPARATOR = ";"         # several links in one message: link1;link2;...
+
+
+def split_data(message: str) -> list[str]:
+    """'link1;link2' -> ['link1', 'link2'] (blank parts dropped, order kept)."""
+    return [part.strip() for part in (message or "").split(DATA_SEPARATOR) if part.strip()]
 
 
 def batch_name(number: str) -> str:
@@ -77,6 +88,7 @@ class Collector:
         for data, stamp in existing:
             if data not in self._seen:
                 self._seen.add(data)
+                self._seen.update(split_data(data))
                 self.rows.append({"no": len(self.rows) + 1, "data": data, "timestamp": stamp})
 
         self._file = open(path, "a", encoding="utf-8-sig", newline="")
@@ -115,18 +127,26 @@ class Collector:
         self._writer = None
 
     # --------------------------------------------------------------- collecting
-    def add(self, data: str, timestamp: str | None = None) -> CollectResult:
-        """Collect one piece of data (only while a session is active). Exact repeats are ignored."""
+    def add(self, message: str, timestamp: str | None = None) -> list[CollectResult]:
+        """Collect one received message (only while a session is active).
+
+        The message is split on ";" and every part is added as its own row with the same
+        timestamp. Parts already collected (earlier, or earlier in this message) are ignored.
+        """
         if not self.active:
-            return CollectResult("ignored")
-        text = (data or "").strip()
-        if not text:
-            return CollectResult("ignored")
+            return [CollectResult("ignored")]
+        parts = split_data(message)
+        if not parts:
+            return [CollectResult("ignored")]
+        stamp = timestamp or _now()
+        return [self._add_one(part, stamp) for part in parts]
+
+    def _add_one(self, text: str, timestamp: str) -> CollectResult:
         if text in self._seen:
             self.duplicates += 1
             return CollectResult("duplicate")
         self._seen.add(text)
-        row = {"no": len(self.rows) + 1, "data": text, "timestamp": timestamp or _now()}
+        row = {"no": len(self.rows) + 1, "data": text, "timestamp": timestamp}
         self.rows.append(row)
         if self._writer is not None:
             try:
