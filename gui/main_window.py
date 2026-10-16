@@ -710,8 +710,7 @@ class MainWindow(QMainWindow):
             "<li>Mode <b>Server</b> (kamera mengirim ke aplikasi) dan <b>Client</b> (ambil dari server FTP lain)</li>"
             "<li>Code yang sama hanya disimpan 1 file</li>"
             "<li>Nama yang tidak sesuai tidak disimpan, cukup dicatat di log txt</li>"
-            "<li>Log txt per hari di folder tujuan\\_log: diterima, log, tidak_sesuai</li>"
-            "<li>Backend C# multi koneksi, GUI PySide6</li></ul>")
+            "<li>Log txt per hari di folder tujuan\\_log: diterima, log, tidak_sesuai</li></ul>")
         text.setWordWrap(True)
         text.setTextFormat(Qt.TextFormat.RichText)
         row.addWidget(text, 1)
