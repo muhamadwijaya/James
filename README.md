@@ -1,4 +1,4 @@
-# FRT Cam - System Rename
+# FRT Cam - System Rename (v2)
 
 Aplikasi Windows untuk **menerima foto via FTP**, lalu otomatis **me-rename** dan
 menyimpannya ke folder tujuan.
@@ -6,6 +6,16 @@ menyimpannya ke folder tujuan.
 - GUI: **Python + PySide6**
 - Backend: **C#** (async, banyak koneksi diproses paralel)
 - Build langsung jadi **1 file `.exe`** dengan `build.bat`
+
+## Baru di versi 2
+
+- **Kolektor**: kumpulkan semua data yang diterima dari FTP ke **satu file CSV per batch**.
+  Duplikat (code / link yang sama) **diabaikan**, dan bisa juga **menerima string link**
+  yang diketik/ditempel manual. Alur: isi nama file **Alb-NNNNNN** (angka diisi manual),
+  klik **Start** (data dikunci ke CSV itu), klik **Done** bila selesai. Ada tombol **Export CSV**.
+- **Aktivasi (model patch)**: aplikasi dikunci per komputer dengan **HWID + registry** dan
+  **kode aktivasi** yang ditandatangani (Ed25519), plus **OTP**. Kode dibuat oleh vendor
+  (lihat `tools/license_tool.py`) dan diminta ke nomor vendor. Detail di bagian **Aktivasi** di bawah.
 
 ## Tampilan
 
@@ -125,6 +135,62 @@ Folder khusus di dalam folder tujuan:
 | `_tidak_sesuai` | foto yang formatnya tidak sesuai, hanya jika opsinya dicentang |
 | `_duplikat` | duplikat, hanya jika opsinya dicentang |
 | `.incoming` | file yang sedang diterima (sementara) |
+
+## Kolektor (CSV per batch)
+
+Menu **Kolektor** mengumpulkan data yang diterima dari FTP ke satu file CSV.
+
+1. Isi **Nama file**: `Alb-` + angka (diisi manual, mis. `000123` → `Alb-000123`).
+2. Pilih **Folder CSV** (default `folder tujuan\collect`).
+3. Klik **Start** → CSV dibuka/dikunci (`Alb-000123.csv`), nama batch terkunci, mulai mengumpulkan.
+4. Setiap foto yang diterima dari FTP (dan link/string yang ditambah manual di kotak *Tambah manual*)
+   dicatat satu baris. **Duplikat diabaikan** (berdasarkan code; kalau tidak ada code, berdasarkan link).
+5. Klik **Done** bila selesai (nama batch terbuka lagi, nomor otomatis naik ke batch berikutnya).
+6. **Export CSV** membuat salinan CSV ke lokasi lain kapan saja.
+
+- Baris ditulis ke CSV secara langsung (aman walau aplikasi ditutup); memulai batch yang sama lagi
+  akan melanjutkan tanpa menggandakan baris lama.
+- CSV memakai pemisah `;` dan UTF-8 BOM, jadi langsung rapi dibuka di Excel (Indonesia).
+- Kolom: No; Batch; Waktu diterima; Waktu foto; Code; **Link/String asli**; Nama baru; Status; Dari; Ukuran.
+
+## Aktivasi (model patch, HWID + registry + OTP)
+
+Aplikasi ini dikunci per komputer. Perlindungan ini untuk aplikasi Anda sendiri — bukan alat untuk
+membuka software orang lain.
+
+Cara kerja:
+
+- Saat dibuka, kalau belum aktif, muncul jendela **Aktivasi**. Di situ ada **ID Komputer (HWID)**,
+  dihitung dari identitas mesin (di Windows: *MachineGuid* registry + *volume serial* C: + MAC), lalu di-hash.
+- Pelanggan mengirim HWID itu ke nomor vendor (default **085772869284**, WhatsApp/SMS) dan menerima
+  **Kode Aktivasi** + **OTP**.
+- Kode = tanda tangan **Ed25519** atas `HWID | nama | masa berlaku | OTP`. Aplikasi memverifikasi
+  dengan **kunci publik** vendor yang tertanam. Karena yang tertanam hanya kunci publik, kode **tidak
+  bisa dipalsukan** tanpa kunci privat vendor, dan hanya berlaku di komputer ber-HWID itu.
+- Setelah berhasil, aktivasi disimpan di **registry** (HKCU) **dan** file cadangan, dan diverifikasi
+  ulang terhadap HWID setiap kali dibuka (menyalin registry/file ke PC lain tidak berguna).
+- Bisa juga memuat file **`.lic`** (tombol *Muat file .lic*) atau mengarahkan env `FRTCAM_LICENSE_FILE`
+  ke file lisensi (untuk lisensi massal).
+
+### Membuat kode aktivasi (khusus vendor)
+
+Pakai `tools/license_tool.py` (butuh Python; tidak perlu dibagikan ke pelanggan):
+
+```
+python tools\license_tool.py keygen --write     # buat kunci vendor Anda sendiri (SEKALI), tulis kunci publik ke app, lalu build ulang
+python tools\license_tool.py issue --hwid <HWID dari pelanggan> --name "PT Contoh" --days 0 --out kode.lic
+```
+
+- `--days 0` = selamanya; `--days 365` = sewa 1 tahun. OTP dibuat acak (atau `--otp 123456`).
+- Kirim **KODE AKTIVASI** + **OTP** ke pelanggan (mis. via WhatsApp dari nomor vendor), atau kirim file `kode.lic`.
+- **Penting:** sebelum program dibagikan, jalankan `keygen` untuk memakai kunci Anda sendiri. Sebelum itu,
+  dipakai **kunci DEMO** bawaan yang kuncinya diketahui umum (siapa pun bisa membuat kode) — hanya untuk uji coba.
+- Nomor vendor bisa diganti di `gui/activation.py` (`VENDOR_PHONE`). Aplikasi tidak mengirim SMS sendiri
+  (menghindari penyalahgunaan); pengiriman OTP dilakukan manual lewat nomor vendor, atau integrasikan
+  gateway SMS Anda sendiri bila perlu.
+
+Mengirim OTP SMS otomatis **sengaja tidak dibuat** di dalam aplikasi, supaya file `.exe` yang tersebar
+tidak bisa dipakai membanjiri satu nomor dengan SMS.
 
 ## Build `.exe`
 

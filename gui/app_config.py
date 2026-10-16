@@ -48,6 +48,9 @@ DEFAULTS: dict = {
     "keep_duplicates": False,
     "keep_unmatched": False,
     "autostart": False,
+    # kolektor (collector -> CSV per batch)
+    "collect_number": "000001",
+    "collect_folder": "",
 }
 
 

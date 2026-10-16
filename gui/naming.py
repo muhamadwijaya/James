@@ -40,8 +40,8 @@ def extract_code(prefix: str) -> str:
     return clean_code(text)
 
 
-def build_name(incoming: str, line_id: str) -> str | None:
-    """Return the new file name, or None when ``incoming`` does not match the format."""
+def parse(incoming: str) -> tuple[str, datetime, str] | None:
+    """Return (code, photo timestamp, extension) or None when the format does not match."""
     m = _INCOMING.match(incoming or "")
     if not m:
         return None
@@ -54,4 +54,13 @@ def build_name(incoming: str, line_id: str) -> str | None:
     except ValueError:
         return None
     ext = (m.group("ext") or ".jpg").lower()
+    return code, ts, ext
+
+
+def build_name(incoming: str, line_id: str) -> str | None:
+    """Return the new file name, or None when ``incoming`` does not match the format."""
+    parsed = parse(incoming)
+    if parsed is None:
+        return None
+    code, ts, ext = parsed
     return f"{clean_line_id(line_id)}_{ts:%Y%m%d_%H%M%S}_{code}{ext}"

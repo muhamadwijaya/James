@@ -43,6 +43,12 @@ def main() -> int:
     app.setStyleSheet(theme.stylesheet())
     app.setWindowIcon(app_icon())
 
+    import sys as _sys
+    _sys.setrecursionlimit(5000)
+    from activation_dialog import ensure_activated
+    if not ensure_activated():
+        return 0
+
     from main_window import MainWindow  # after the style is set: widgets read it while building
 
     window = MainWindow()

@@ -38,13 +38,15 @@ import icons
 import naming
 import theme
 from backend_client import BackendClient, find_backend
+from collector import Collector
+from collector_page import CollectorPage
 from photo_panel import PhotoPanel
 from received_table import FileTableCard, ReceivedFilter, ReceivedModel, TableController
 from stats import Stats
 from widgets import ActivityChart, Card, IconBox, StateBadge, StatCard, StatusBox, TransferCard, qcolor
 
 APP_TITLE = "FRT Cam"
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 # Only the newest rows/lines are kept on screen so the UI stays light when running
 # continuously; the full data is in the daily txt files in <folder tujuan>\_log.
 MAX_TABLE_ROWS = 50
@@ -192,6 +194,8 @@ class MainWindow(QMainWindow):
         self.proxy.setSourceModel(self.model)
         self.table_ctl = TableController(self.model, self.proxy, self)
 
+        self.collector = Collector()
+
         self._build_ui()
         self._apply_config(self.cfg)
         self._set_state("stopped")
@@ -223,6 +227,7 @@ class MainWindow(QMainWindow):
         col.setSpacing(14)
         col.addWidget(self._build_header())
         self.pages.addWidget(self._build_dashboard_page())
+        self.pages.addWidget(self._build_collector_page())
         self.pages.addWidget(self._build_log_page())
         self.pages.addWidget(self._build_files_page())
         self.pages.addWidget(self._build_about_page())
@@ -251,8 +256,9 @@ class MainWindow(QMainWindow):
 
         self.nav_group = QButtonGroup(self)
         self.nav_buttons: list[QPushButton] = []
-        for i, (text, icon_name) in enumerate((("Dashboard", "home"), ("Log Aktivitas", "list"),
-                                               ("File Diterima", "folder"), ("Tentang", "info"))):
+        for i, (text, icon_name) in enumerate((("Dashboard", "home"), ("Kolektor", "grid"),
+                                               ("Log Aktivitas", "list"), ("File Diterima", "folder"),
+                                               ("Tentang", "info"))):
             b = QPushButton(f"  {text}")
             b.setObjectName("navButton")
             b.setCheckable(True)
@@ -665,6 +671,11 @@ class MainWindow(QMainWindow):
         return card
 
     # ----------------------------------------------------------- other pages
+    def _build_collector_page(self) -> QWidget:
+        self.collector_page = CollectorPage(self.collector)
+        self.collector_page.sessionChanged.connect(self._on_collector_session)
+        return self.collector_page
+
     def _build_log_page(self) -> QWidget:
         card = Card("Log Aktivitas", f"{MAX_LOG_LINES} baris terbaru. Data lengkap per hari: "
                                      "folder tujuan\\_log\\log_YYYY-MM-DD.txt", "list")
@@ -738,6 +749,8 @@ class MainWindow(QMainWindow):
         self.autostart_action.blockSignals(True)
         self.autostart_action.setChecked(cfg["autostart"])
         self.autostart_action.blockSignals(False)
+        collect_folder = cfg["collect_folder"] or str(Path(cfg["target_dir"]) / "collect")
+        self.collector_page.set_config(cfg["collect_number"], collect_folder)
 
     def _set_dedup_minutes(self, minutes: int) -> None:
         index = self.dedup_combo.findData(minutes)
@@ -775,6 +788,8 @@ class MainWindow(QMainWindow):
             "keep_duplicates": self.keep_dup_check.isChecked(),
             "keep_unmatched": self.keep_unmatched_check.isChecked(),
             "autostart": self.autostart_action.isChecked(),
+            "collect_number": self.collector_page.current_number(),
+            "collect_folder": self.collector_page.current_folder(),
         }
 
     def _validate(self, cfg: dict) -> list[str]:
@@ -947,6 +962,7 @@ class MainWindow(QMainWindow):
     def _on_file_event(self, event: dict) -> None:
         self.stats.record(event)
         self.model.add(event)
+        self.collector_page.feed_event(event)
         status = event.get("status", "error")
         if status == "saved" and event.get("path"):
             self.photo.show_saved(event)
@@ -972,6 +988,13 @@ class MainWindow(QMainWindow):
             self._transfers[tid] = info
         extra = max(0, len(self._transfers) - (0 if info["state"] in ("done", "error") else 1))
         self.transfer_card.set_transfer(info["name"], info["bytes"], info["total"], info["ms"], info["state"], extra)
+
+    def _on_collector_session(self) -> None:
+        if not self.collector.active and self.collector.batch:
+            # after Done: remember the batch folder and suggest the next number
+            import collector as collector_mod
+            self.collector_page.number_edit.setText(collector_mod.default_number(self.collector.batch))
+        app_config.save(self._collect_config())
 
     def _on_backend_finished(self, exit_code: int) -> None:
         self._connections = 0
