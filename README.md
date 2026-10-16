@@ -174,7 +174,20 @@ Cara kerja:
 
 ### Membuat kode aktivasi (khusus vendor)
 
-Pakai `tools/license_tool.py` (butuh Python; tidak perlu dibagikan ke pelanggan):
+Ada **2 cara**. Pakai salah satu.
+
+**Cara 1 - aplikasi (GUI), paling mudah.** Build sekali dengan `build_activation.bat`:
+
+```
+dist\FRTCam-Aktivasi.exe
+```
+
+Buka aplikasinya, tempel HWID dari pelanggan, pilih masa berlaku, klik **Buat Kode** →
+muncul **Kode Aktivasi** + **OTP** yang tinggal disalin/dikirim, atau **Simpan file .lic**.
+Tombol **Buat kunci vendor sendiri** membuat kunci Anda (sekali). Simpan `.exe` ini untuk Anda
+sendiri — **jangan** dibagikan ke pelanggan.
+
+**Cara 2 - command line.** `tools/license_tool.py` (butuh Python):
 
 ```
 python tools\license_tool.py keygen --write     # buat kunci vendor Anda sendiri (SEKALI), tulis kunci publik ke app, lalu build ulang
@@ -255,9 +268,19 @@ gui/            GUI PySide6
   backend_client.py   menjalankan backend (QProcess)
   naming.py           preview aturan rename
   app_config.py       simpan/muat config.json
+  collector.py        kolektor: sesi batch + tulis CSV + anti duplikat
+  collector_page.py   halaman Kolektor
+  activation.py       aktivasi: HWID + kode Ed25519 + OTP (verifikasi)
+  activation_dialog.py jendela aktivasi (aplikasi utama)
+  vendor_app.py       aplikasi PEMBUAT LISENSI (khusus vendor)
+  ed25519.py          tanda tangan Ed25519 (pure Python)
+  hwid.py             hitung HWID komputer
+  license_store.py    simpan aktivasi di registry + file
 tools/test_upload.py  kirim foto uji
+tools/license_tool.py pembuat kode aktivasi (command line, khusus vendor)
 assets/app.ico        ikon aplikasi (.exe)
-build.bat             build semua menjadi dist\FtpPhotoRenamer.exe
+build.bat             build aplikasi utama -> dist\FtpPhotoRenamer.exe
+build_activation.bat  build pembuat lisensi -> dist\FRTCam-Aktivasi.exe
 ```
 
 GUI menjalankan `FtpBackend.exe` sebagai proses terpisah. Backend mengirim event JSON per baris
